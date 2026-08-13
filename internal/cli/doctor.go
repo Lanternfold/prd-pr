@@ -5,6 +5,8 @@ import (
 	"io"
 	"strings"
 	"text/tabwriter"
+
+	"github.com/lanternfold/prd-pr/internal/preflight"
 )
 
 func runDoctor(stdout, stderr io.Writer, rt Runtime) int {
@@ -26,6 +28,8 @@ func runDoctor(stdout, stderr io.Writer, rt Runtime) int {
 		}
 	}
 
+	m := preflight.InspectMachine(preflightEnv(rt))
+
 	w := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintf(w, "PRD→PR version:\t%s\n", versionLine(rt))
 	fmt.Fprintf(w, "operating system:\t%s\n", valueOrUnknown(rt.GOOS))
@@ -33,6 +37,9 @@ func runDoctor(stdout, stderr io.Writer, rt Runtime) int {
 	fmt.Fprintf(w, "Go version:\t%s\n", valueOrUnknown(rt.GoVersion))
 	fmt.Fprintf(w, "Git:\t%s\n", gitStatus)
 	fmt.Fprintf(w, "Git version:\t%s\n", gitVersion)
+	fmt.Fprintf(w, "Cursor editor:\t%s\n", presentMissing(m.CursorEditor))
+	fmt.Fprintf(w, "Cursor Agent:\t%s\n", presentMissing(m.CursorAgent))
+	fmt.Fprintf(w, "GitHub CLI:\t%s\n", presentMissing(m.GitHubCLI))
 	_ = w.Flush()
 
 	if !gitOK {
@@ -54,6 +61,13 @@ func gitVer(rt Runtime) (string, error) {
 		return "", fmt.Errorf("git version lookup not configured")
 	}
 	return rt.GitVersion()
+}
+
+func presentMissing(ok bool) string {
+	if ok {
+		return "available"
+	}
+	return "missing"
 }
 
 func valueOrUnknown(s string) string {

@@ -29,6 +29,7 @@ Commands:
   doctor     Inspect the local environment
   init       Initialize .project/ in a product directory
   inspect    Parse and validate a PRD.md
+  preflight  Report project and environment readiness
   run        Run one coding-worker task against a product workspace
   status     Show persisted project state
 
@@ -56,6 +57,8 @@ func Main(args []string, stdout, stderr io.Writer, rt Runtime) int {
 		return runInit(args[2:], stdout, stderr)
 	case "inspect":
 		return runInspect(args[2:], stdout, stderr)
+	case "preflight":
+		return runPreflight(args[2:], stdout, stderr, rt)
 	case "run":
 		return runRun(args[2:], stdout, stderr, rt)
 	case "status":

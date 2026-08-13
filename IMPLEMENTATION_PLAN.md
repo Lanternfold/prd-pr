@@ -19,7 +19,7 @@ Product and engineering share one catalog. Names and IDs come from PRD §52:
 | P0 | Skeleton (CLI + state + init + doctor) | Done (two delivery slices) |
 | P1 | PRD Parser | Done |
 | P2 | Graph Engine | Done |
-| P3 | Preflight | Not started (P4 uses fail-closed runtime gates instead of a preflight report) |
+| P3 | Preflight | Not started (advisory readiness report; P4 remains the fail-closed runtime gate) |
 | P4 | Cursor Worker | Done |
 | P5 | Git/GitHub | Not started |
 | P6 | CI Integration | Not started |
@@ -45,7 +45,7 @@ Draft v2 of this plan used a different numbering to split delivery. Those IDs ar
 | Plan P3 DAG | **P2** | Graph engine |
 | Plan P4 Preflight | **P3** | Environment inspection |
 | Plan P5 Planner + router interfaces | **P4** packet/plan + **P8** router | No live LLM; Noop/Deterministic default (ADR-008) |
-| Plan P6 Minimal Git | **P5** local subset | Baseline SHA before Cursor **writes** |
+| Plan P6 Minimal Git | **P4** pre-write Git safety + **P5** broader Git | P4 inspect/baseline/diff before writes; P5 commits/branches/push/GitHub |
 | Plan P7 Cursor | **P4** | Worker after a recoverable checkpoint |
 | Plan P8 Independent test | **P7** | Orchestrator grades; worker does not (ADR-005) |
 | Plan P9 GitHub | **P5** GitHub subset | After first dogfood; PRs not required for MVP |
@@ -65,19 +65,28 @@ Retired numbering is not used in new work.
 
 **NO REAL AUTONOMOUS CODE MODIFICATION WITHOUT A RECOVERABLE GIT CHECKPOINT.**
 
-This is a **runtime** rule (ADR-002, ADR-010), not a second phase ID. PRD P4 (Cursor) does not list P5 as a *build* dependency of the adapter. The running engine still must not let Cursor write until a local Git baseline exists.
+This is a **runtime** rule (ADR-002, ADR-010), not a second phase ID.
 
-MVP does **not** need GitHub PR creation. Local Git (P5 local subset) is sufficient.
+**P4 requires and enforces a local Git baseline before real Cursor writes.** That minimum local Git safety is part of the Cursor worker, not a P5 delivery gate:
 
-The orchestrator must be able to determine:
+- verify Git repository
+- verify product root
+- inspect working tree
+- establish baseline SHA
+- capture baseline
+- inspect changes after worker execution
+
+**P5** owns the broader Git lifecycle (commits, branches, pushes, GitHub, PRs, remote state, milestone PR behavior). Do not treat P4 writes as blocked on P5. Do not move the P4 baseline capability back into P5.
+
+MVP does **not** need GitHub PR creation. P5 GitHub integration is not required for the first local dogfood.
+
+The orchestrator (P4 safety, then later P5 lifecycle) must be able to determine:
 
 - current branch
 - current commit
 - clean / dirty working tree
 - baseline commit (recorded before the worker runs)
 - changes introduced by the worker (vs that baseline)
-
-**Delivery:** implement P5 local inspect/baseline before enabling real Cursor writes in P4.
 
 ---
 
@@ -101,7 +110,7 @@ PRD.md
   → be resumable after interruption
 ```
 
-That slice is **First Dogfood Milestone**, after P0, P1, P2, P3, P4 (packet + worker), P5 (local Git), and P7 (local tests), plus a **minimal engine** stub. It does not require P5 GitHub, P6 CI, P8–P13.
+That slice is **First Dogfood Milestone**, after P0, P1, P2, P3 (readiness reporting), P4 (worker **and** local Git baseline), plus a **minimal engine** stub. Independent verification (P7) is later in the loop. It does not require P5 (local Git lifecycle or GitHub), P6 CI, or P8–P13. P5 GitHub integration is **not** required for the first local dogfood.
 
 **Default planning path:** Deterministic PRD phase → plan → task packet (P4). A Noop/Deterministic planner is sufficient. A live LLM adapter can be enabled later (P8).
 
@@ -182,17 +191,19 @@ That slice is **First Dogfood Milestone**, after P0, P1, P2, P3, P4 (packet + wo
 
 **Objective.** Inspect environment: OS, git, Cursor CLI presence, dirty tree, required CLIs from PRD deps (AVAILABLE/MISSING/OPTIONAL/BLOCKING). `gh` may be reported but must **not** block MVP.
 
-**Why.** Fail closed before invoking Cursor on a broken machine.
+**Why.** Explicit readiness report before a run: OS, git, Cursor CLI, dirty tree, required CLIs. Fail-closed enforcement immediately before Cursor execution remains P4.
 
 **Dependencies.** P0, P1 (PRD §52).
 
 **Files/packages.** `internal/preflight`; enrich `prdpr doctor`.
 
-**Interfaces.** `Report` with tool versions (or missing), dependency class, blocking list. No secret values. Git missing is BLOCKING for `run`. GitHub/`gh` is OPTIONAL until P5 GitHub subset / P6.
+**Interfaces.** `Report` with tool versions (or missing), dependency class, blocking list. No secret values. Git missing is BLOCKING on the report. GitHub/`gh` is OPTIONAL until P5 GitHub subset / P6.
 
-**Tests.** Fake PATH; missing git is BLOCKING for run; optional tool missing does not block; missing `gh` does not block MVP run.
+**Relationship to P4.** P3 is **advisory/readiness orchestration**: it produces an explicit readiness report. P4 is **authoritative runtime safety enforcement**: it still performs fail-closed checks immediately before execution. P3 being unavailable must **never** cause P4 to bypass its own safety checks (including the local Git baseline).
 
-**Definition of Done.** `prdpr run` refuses to start when Git is missing or the tree policy is violated (define: refuse dirty tree unless configured).
+**Tests.** Fake PATH; missing git is BLOCKING on the report; optional tool missing does not block; missing `gh` does not block MVP run.
+
+**Definition of Done.** `prdpr` emits an explicit preflight/readiness report (OS, git, Cursor CLI, dirty tree, required CLIs) with AVAILABLE/MISSING/OPTIONAL/BLOCKING. Git missing or tree-policy violation is BLOCKING on that report (define: dirty tree unless configured). Engine start may consult the report; Cursor writes remain gated by P4 regardless.
 
 **Defer.** Xcode/Docker deep checks, Keychain credential matrix, auto-install, requiring GitHub.
 
@@ -204,7 +215,7 @@ That slice is **First Dogfood Milestone**, after P0, P1, P2, P3, P4 (packet + wo
 
 **Why.** Coding lane (ADR-004). Packet needs a plan; MVP must not require a paid model (ADR-008). Worker claim of success is not verification (ADR-005).
 
-**Dependencies.** P0, P1 (PRD §52). Runtime still requires P3 preflight not blocking and P5 local baseline before writes.
+**Dependencies.** P0, P1 (PRD §52). **P4 requires and enforces a local Git baseline before real Cursor writes.** P3 readiness is advisory and must not be treated as a substitute for those checks; P3 unavailable must not bypass P4. P5 is **not** a write-gate for the worker.
 
 **Files/packages.** `internal/plan`, `internal/packet`, `internal/cursor`, `internal/engine` stub, `internal/redact`, `internal/proc`, and P4-minimum `internal/vcs` (inspect/baseline/diff only).
 
@@ -220,22 +231,24 @@ That slice is **First Dogfood Milestone**, after P0, P1, P2, P3, P4 (packet + wo
 
 ## P5 — Git / GitHub
 
-**Objective.** Local Git inspection and recoverable baseline; later, optional push and **one PR per run/milestone** (ADR-011). Never merge default unless configured.
+**Objective.** Broader Git lifecycle and GitHub integration: commits, branches, pushes, remote state, and **one PR per run/milestone** (ADR-011). Never merge default unless configured.
 
-**Why.** Git SHAs are the code checkpoint. GitHub is CI’s door and is **not** required to prove the orchestration loop.
+The **minimum** local Git safety required before Cursor writes (verify repo/product root, inspect working tree, establish/capture baseline SHA, inspect changes after the worker) is already **P4**. Do not re-own or re-gate that capability here.
+
+**Why.** Commits, branches, remotes, and GitHub are the product Git lifecycle. GitHub is CI’s door and is **not** required to prove the orchestration loop or the first local dogfood. P4 already owns the pre-write checkpoint.
 
 **Dependencies.** P0 (PRD §52).
 
 **Delivery slices (not extra IDs).**
 
-1. **Local Git (before real Cursor writes):** branch, HEAD SHA, dirty/clean, baseline record, diff vs baseline. No `gh`, no PR.
-2. **GitHub (after first dogfood):** `Push`, `OpenPR(milestone)`. Engine must still complete a local run with GitHub disabled.
+1. **Local Git lifecycle:** commits, branches, push-to-local-remote as needed. No `gh`, no PR. Does **not** include re-implementing P4’s pre-write inspect/baseline invariant.
+2. **GitHub (after first dogfood):** `Push`, `OpenPR(milestone)`, remote state, milestone PR behavior. Engine must still complete a local run with GitHub disabled.
 
-**Files/packages.** `internal/vcs` (local subset first; `gh` later).
+**Files/packages.** `internal/vcs` extended beyond P4’s inspect/baseline/diff; `gh` later.
 
-**Definition of Done (local).** Fixture repo: record baseline; after a file change, report paths vs baseline; `prdpr run` must not invoke the coding worker until this baseline exists.
+**Definition of Done (local).** Fixture repo: create branch, commit worker results, report local history. Pre-write baseline remains P4’s invariant.
 
-**Definition of Done (GitHub).** Manual smoke can open one PR when `gh` is available. MVP dogfood does not require this.
+**Definition of Done (GitHub).** Manual smoke can open one PR when `gh` is available. First local dogfood does not require this.
 
 **Defer.** Stacked PRs, auto-merge, per-phase PR mode.
 
@@ -263,7 +276,7 @@ That slice is **First Dogfood Milestone**, after P0, P1, P2, P3, P4 (packet + wo
 
 **Why.** Independent verification (ADR-005). The worker is never the grader.
 
-**Dependencies.** P0, P1 (PRD §52). Runtime sequence still: packet → git baseline → worker → independent diff → independent tests.
+**Dependencies.** P0, P1 (PRD §52). Runtime sequence still: packet → **P4** git baseline → worker → independent diff → independent tests. The baseline step is P4, not P5.
 
 **Files/packages.** `internal/testeng` (local runner only).
 
@@ -277,7 +290,7 @@ That slice is **First Dogfood Milestone**, after P0, P1, P2, P3, P4 (packet + wo
 
 **Objective.** Independent review + applicable quality gates. Model Router + LLM **interfaces** (Noop default). Deterministic checks first; live LLM review later.
 
-**Why.** Worker must not grade itself (ADR-005). Router must not hardcode vendors (ADR-008). First dogfood already has independent tests; this adds extra gates.
+**Why.** Worker must not grade itself (ADR-005). Router must not hardcode vendors (ADR-008). Independent tests (P7) grade the worker; this phase adds extra gates.
 
 **Dependencies.** P0, P1 (PRD §52).
 
@@ -379,16 +392,18 @@ PRD §52 allows parallelism after P0. Humans building this repo still work seque
 P0 Skeleton (done: CLI then state)
   → P1 Parser (done)
   → P2 Graph (done)
-  → P3 Preflight
-  → P5 local Git baseline
+  → P3 Preflight (readiness report)
   → P4 packet + Cursor worker
-  → P7 independent tests
+       (enforces local Git baseline before real writes)
+  → P7 independent tests (later in the loop)
         ★ First Dogfood / MVP Orchestrator
-          (separate fixture; no GitHub, no live LLM, no self-modification)
+          (separate fixture; P3 + P4 worker + P4 Git baseline;
+           independent verification later; no P5 GitHub, no live LLM,
+           no self-modification)
 
 Then:
 
-  → P5 GitHub subset
+  → P5 Git/GitHub (broader lifecycle, then GitHub)
   → P6 CI
   → P8 Review + router interfaces
   → P9 Self-Fix
@@ -399,7 +414,7 @@ Then:
   → P13 Self-dogfood
 ```
 
-P3 can overlap with P5 local Git. P7 can overlap with P4 adapter work. **Do not start GitHub/CI/review/repair/human/learning/self-dogfood until the MVP slice has been used on the fixture repository.**
+P3 can overlap with P4 worker work. P4 must still enforce its own fail-closed checks if P3 is missing. P7 can overlap with remaining P4 polish. **Do not start GitHub/CI/review/repair/human/learning/self-dogfood until the MVP slice has been used on the fixture repository.** Do **not** implement P5 local inspect/baseline as a prerequisite for P4 writes; that capability is already P4.
 
 ---
 
@@ -407,7 +422,7 @@ P3 can overlap with P5 local Git. P7 can overlap with P4 adapter work. **Do not 
 
 **Name:** MVP Orchestrator  
 
-**When:** P0, P1, P2, P3, P4, P5 local Git, and P7 complete, with a minimal engine stub.
+**When:** P0, P1, P2, P3 (readiness reporting), and P4 (worker **and** local Git baseline) complete, with a minimal engine stub. Independent verification (P7) is later in the loop. P5 GitHub integration is **not** required. P5 local Git lifecycle is **not** a prerequisite for P4 writes.
 
 **Where:** a **real, tiny, separate Git repository**. Example: `~/Studio/Experiments/prdpr-fixture/`.
 
@@ -424,7 +439,7 @@ Do **not** use `~/Studio/Tools/prd-pr/` as the first dogfood workspace.
 1. PRD is parsed.
 2. A **deterministic** plan is generated (no live LLM).
 3. A task packet is generated.
-4. A Git baseline is recorded (branch, commit, clean/dirty, baseline SHA).
+4. P4 records a Git baseline (branch, commit, clean/dirty, baseline SHA) before real Cursor writes.
 5. Cursor is invoked (manual smoke) against the **fixture**.
 6. Cursor modifies the fixture repository.
 7. PRD→PR independently inspects the diff vs baseline.
@@ -435,7 +450,9 @@ Do **not** use `~/Studio/Tools/prd-pr/` as the first dogfood workspace.
 
 The worker’s own claim of success must **not** count as verification.
 
-**First dogfood must not require:** GitHub, GitHub Actions, a live LLM, self-modification of PRD→PR, a repair loop, the human notification system.
+**First dogfood requires:** P3 readiness reporting; P4 worker; P4 local Git baseline; independent verification later (P7).
+
+**First dogfood must not require:** P5 GitHub integration, GitHub Actions, a live LLM, self-modification of PRD→PR, a repair loop, the human notification system. Do not wait for P5 local Git lifecycle before P4.
 
 **Success metric:** one trivial change in the fixture repo is orchestrated end-to-end as above.
 

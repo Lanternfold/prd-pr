@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -15,6 +16,7 @@ type Runtime struct {
 	GoVersion  string
 	LookPath   func(file string) (string, error)
 	GitVersion func() (string, error)
+	LookupEnv  func(key string) (string, bool)
 	Now        func() time.Time
 }
 
@@ -26,6 +28,7 @@ func DefaultRuntime() Runtime {
 		GOARCH:     runtime.GOARCH,
 		GoVersion:  runtime.Version(),
 		LookPath:   exec.LookPath,
+		LookupEnv:  os.LookupEnv,
 		GitVersion: func() (string, error) {
 			out, err := exec.Command("git", "version").Output()
 			return strings.TrimSpace(string(out)), err
