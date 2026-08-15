@@ -67,7 +67,7 @@ Requires Go (version in `go.mod`) and Git. From a clone of this repository:
 go install ./cmd/prdpr
 ```
 
-`go install` writes `prdpr` to `$GOBIN` if set, otherwise `$GOPATH/bin` (default `$HOME/go/bin`). Add that directory to `PATH` if the shell cannot find `prdpr`. The binary reports `dev` unless you pass `-ldflags`.
+`go install` writes `prdpr` to `$GOBIN` if set, otherwise `$GOPATH/bin` (default `$HOME/go/bin`). Add that directory to `PATH` if the shell cannot find `prdpr`. A checkout install (`go install ./cmd/prdpr`) reports `dev`. A tagged module install (`go install github.com/lanternfold/prd-pr/cmd/prdpr@v0.1.0`) and GitHub Release binaries report `0.1.0`.
 
 ### Contributor / developer build
 

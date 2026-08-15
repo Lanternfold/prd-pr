@@ -23,7 +23,7 @@ type Runtime struct {
 // DefaultRuntime inspects this process and the local PATH.
 func DefaultRuntime() Runtime {
 	return Runtime{
-		AppVersion: Version,
+		AppVersion: currentVersion(),
 		GOOS:       runtime.GOOS,
 		GOARCH:     runtime.GOARCH,
 		GoVersion:  runtime.Version(),

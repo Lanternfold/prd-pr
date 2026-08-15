@@ -44,7 +44,7 @@ Same as `prdpr bootstrap`.
 
 ## `prdpr version`
 
-**What it does:** Prints the binary version. Development and `go install ./cmd/prdpr` builds print `dev`. Release builds inject the tag version via `-X github.com/lanternfold/prd-pr/internal/cli.Version=<version>`. `prdpr --version` is the same command.
+**What it does:** Prints the binary version. Checkout builds (`go build`, `go install ./cmd/prdpr`) print `dev`. A tagged module install (`go install github.com/lanternfold/prd-pr/cmd/prdpr@v0.1.0`) prints `0.1.0` from Go module build info. GitHub Release binaries inject the tag version via `-X github.com/lanternfold/prd-pr/internal/cli.Version=<version>`. `prdpr --version` is the same command.
 
 **When to use it:** Support / install checks.
 
