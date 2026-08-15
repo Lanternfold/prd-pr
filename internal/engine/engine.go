@@ -9,11 +9,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lanternfold/prd-pr/internal/ci"
+	"github.com/lanternfold/prd-pr/internal/config"
 	"github.com/lanternfold/prd-pr/internal/cursor"
 	"github.com/lanternfold/prd-pr/internal/fsguard"
+	"github.com/lanternfold/prd-pr/internal/llm"
+	"github.com/lanternfold/prd-pr/internal/notify"
 	"github.com/lanternfold/prd-pr/internal/packet"
-	"github.com/lanternfold/prd-pr/internal/plan"
 	"github.com/lanternfold/prd-pr/internal/prd"
+	"github.com/lanternfold/prd-pr/internal/preflight"
+	"github.com/lanternfold/prd-pr/internal/proc"
 	"github.com/lanternfold/prd-pr/internal/redact"
 	"github.com/lanternfold/prd-pr/internal/state"
 	"github.com/lanternfold/prd-pr/internal/vcs"
@@ -24,16 +29,31 @@ const (
 	packetsDir         = ".project/packets"
 	transcriptsDir     = ".project/transcripts"
 	executionFile      = ".project/execution.json"
+	reviewFile         = ".project/review.json"
+	graphFile          = ".project/graph.json"
+	forecastFile       = ".project/forecast.json"
+	incidentFile       = ".project/incident.json"
 )
 
 // Options injects P4 dependencies. This is not the full orchestration engine.
 type Options struct {
-	Worker    cursor.Worker
-	Git       *vcs.Client
-	Now       func() time.Time
-	NewID     func() string
-	Timeout   time.Duration
-	AllowSelf bool
+	Worker       cursor.Worker
+	Git          *vcs.Client
+	Now          func() time.Time
+	NewID        func() string
+	Timeout      time.Duration
+	TestTimeout  time.Duration
+	AllowSelf    bool
+	PreflightEnv preflight.Env
+	LookPath     func(file string) (string, error)
+	ProcRunner   *proc.Runner
+	Config       config.Config
+	LLM          llm.Adapter
+	RepairWorker cursor.Worker
+	GH           *vcs.GHClient
+	CI           *ci.Watcher
+	Bell         *notify.Bell
+	SkipWait     bool
 }
 
 // Request is one coding-worker invocation against a product workspace.
@@ -41,6 +61,13 @@ type Request struct {
 	ProductRoot string
 	PRDPath     string
 	PhaseID     prd.PhaseID
+	Mode        string
+}
+
+type Result struct {
+	Execution        Execution
+	Packet           packet.Packet
+	ProjectCompleted bool
 }
 
 // Execution is the persisted P4 record.
@@ -65,11 +92,9 @@ type Execution struct {
 	VerifiedSuccess      bool         `json:"verified_success"`
 	CLIMechanism         string       `json:"cli_mechanism,omitempty"`
 	RecordedAt           string       `json:"recorded_at"`
-}
-
-type Result struct {
-	Execution Execution
-	Packet    packet.Packet
+	IncidentID           string       `json:"incident_id,omitempty"`
+	RepairAttempt        int          `json:"repair_attempt,omitempty"`
+	Subagent             string       `json:"subagent,omitempty"`
 }
 
 type Engine struct {
@@ -94,11 +119,81 @@ func New(opts Options) *Engine {
 	if opts.Timeout <= 0 {
 		opts.Timeout = cursor.DefaultTimeout
 	}
+	if opts.Config.MaxRepairAttempts == 0 && opts.Config.PRBoundary == "" && opts.Config.CheapModel == "" {
+		opts.Config = config.Defaults()
+	}
+	if opts.LLM == nil {
+		opts.LLM = llm.None{}
+	}
+	if opts.GH == nil {
+		opts.GH = vcs.DefaultGH()
+	}
+	if opts.CI == nil {
+		opts.CI = ci.Default()
+	}
+	if opts.Bell == nil {
+		opts.Bell = &notify.Bell{Notify: func(string, string) error { return nil }}
+	}
 	return &Engine{opts: opts}
 }
 
+func (e *Engine) cfg() config.Config {
+	c := e.opts.Config
+	if c.MaxRepairAttempts == 0 {
+		d := config.Defaults()
+		if c.HumanTimeout == 0 {
+			c.HumanTimeout = d.HumanTimeout
+		}
+		c.MaxRepairAttempts = d.MaxRepairAttempts
+		if c.BudgetBreachPolicy == "" {
+			c.BudgetBreachPolicy = d.BudgetBreachPolicy
+		}
+		if c.PRBoundary == "" {
+			c.PRBoundary = d.PRBoundary
+		}
+		if c.CheapModel == "" {
+			c.CheapModel = d.CheapModel
+		}
+		if c.StrongModel == "" {
+			c.StrongModel = d.StrongModel
+		}
+		if c.GitHubVisibility == "" {
+			c.GitHubVisibility = d.GitHubVisibility
+		}
+		if c.DefaultBranch == "" {
+			c.DefaultBranch = d.DefaultBranch
+		}
+		if c.RemoteName == "" {
+			c.RemoteName = d.RemoteName
+		}
+		if c.InitialCommitMessage == "" {
+			c.InitialCommitMessage = d.InitialCommitMessage
+		}
+	}
+	return c
+}
+
+func (e *Engine) repairWorker() cursor.Worker {
+	if e.opts.RepairWorker != nil {
+		return e.opts.RepairWorker
+	}
+	return e.opts.Worker
+}
+
+func (e *Engine) fakeWorker() bool {
+	switch e.opts.Worker.(type) {
+	case cursor.Fake, *cursor.Fake, *cursor.Sequence:
+		return true
+	default:
+		return false
+	}
+}
+
 func (e *Engine) Run(ctx context.Context, req Request) (Result, error) {
-	root, jail, err := identifyRoot(req.ProductRoot)
+	if req.Mode == "" {
+		req.Mode = preflight.ModeHeadless
+	}
+	root, jail, err := e.ensureWorkspace(ctx, req.ProductRoot)
 	if err != nil {
 		return refused("", err.Error()), nil
 	}
@@ -123,63 +218,56 @@ func (e *Engine) Run(ctx context.Context, req Request) (Result, error) {
 	if err != nil {
 		return refused(root, err.Error()), nil
 	}
-
-	prdPath := req.PRDPath
-	if prdPath == "" {
-		prdPath = filepath.Join(root, "PRD.md")
-	}
-	doc, err := prd.ParseFile(prdPath)
+	st, err = e.recoverLocked(ctx, g, st)
 	if err != nil {
-		return e.persistRefusal(g, st, root, "", "cannot read PRD: "+err.Error())
+		return Result{}, err
 	}
-	if doc.HasErrors() {
-		return e.persistRefusal(g, st, root, "", "PRD is invalid; refusing to invoke Cursor")
-	}
-	phaseID := req.PhaseID
-	if phaseID == "" {
-		if len(doc.Phases) == 0 {
-			return e.persistRefusal(g, st, root, "", "PRD has no phases")
+	switch st.CurrentState {
+	case state.StateWorkerClaimedDone, state.StateVerificationFailed, state.StateVerificationIncomplete,
+		state.StateReviewing, state.StateRepairing, state.StateVerifying, state.StateVerified:
+		if ex, err := loadExecutionFromGuard(g); err == nil && ex.Invoked {
+			pkt, _ := loadPacket(root, ex.PacketRef)
+			return Result{Execution: ex, Packet: pkt}, nil
 		}
-		phaseID = doc.Phases[0].ID
+	case state.StateCompleted:
+		if req.PhaseID != "" && string(req.PhaseID) == st.CurrentPhaseID {
+			if ex, err := loadExecutionFromGuard(g); err == nil && ex.Invoked {
+				pkt, _ := loadPacket(root, ex.PacketRef)
+				return Result{Execution: ex, Packet: pkt, ProjectCompleted: st.ProjectStatus == state.StatusProjectCompleted}, nil
+			}
+		}
 	}
 
-	baseline, _, err := e.opts.Git.EstablishBaseline(ctx, root)
+	prep, err := e.prepareLocked(ctx, g, st, req, root)
 	if err != nil {
-		return e.persistRefusal(g, st, root, string(phaseID), "git baseline: "+err.Error())
+		return Result{}, err
 	}
-
-	runID := "run_" + e.opts.NewID()
-	taskID := "task_" + e.opts.NewID()
-	pkt, err := plan.DeterministicPlanner{}.Packet(plan.Input{
-		Document:    doc,
-		PhaseID:     phaseID,
-		ProjectID:   st.ProjectID,
-		TaskID:      taskID,
-		ProductRoot: root,
-	})
+	if prep.Execution.RefusalReason != "" {
+		return prep, nil
+	}
+	st, err = g.Load()
 	if err != nil {
-		return e.persistRefusal(g, st, root, string(phaseID), err.Error())
-	}
-	packetRel := filepath.Join(packetsDir, taskID+".json")
-	packetBytes, err := packet.Marshal(pkt)
-	if err != nil {
-		return e.persistRefusal(g, st, root, string(phaseID), err.Error())
-	}
-	if err := g.WriteFile(packetRel, packetBytes); err != nil {
-		return e.persistRefusal(g, st, root, string(phaseID), err.Error())
+		return Result{}, err
 	}
 
 	if r, ok := e.opts.Worker.(interface{ Ready() error }); ok {
 		if err := r.Ready(); err != nil {
-			return e.persistRefusal(g, st, root, string(phaseID), err.Error())
+			return e.persistRefusal(g, st, root, prep.Execution.PhaseID, err.Error())
 		}
 	}
+
+	runID := prep.Execution.RunID
+	phaseID := prep.Execution.PhaseID
+	taskID := prep.Execution.TaskID
+	packetRel := prep.Execution.PacketRef
+	baseline := prep.Execution.Baseline
+	pkt := prep.Packet
 
 	if err := g.AppendEvent(state.Event{
 		Kind:    state.KindIntent,
 		Name:    state.EventWorkerInvoked,
 		RunID:   runID,
-		PhaseID: string(phaseID),
+		PhaseID: phaseID,
 		Payload: state.Payload(map[string]string{
 			"task_id":   taskID,
 			"packet":    packetRel,
@@ -191,8 +279,8 @@ func (e *Engine) Run(ctx context.Context, req Request) (Result, error) {
 	}
 
 	st.CurrentRunID = runID
-	st.CurrentPhaseID = string(phaseID)
-	st.CurrentState = "IMPLEMENTING"
+	st.CurrentPhaseID = phaseID
+	st.CurrentState = state.StateWorkerRunning
 	st.CurrentCommit = baseline.SHA
 	if err := g.Save(st); err != nil {
 		return Result{}, err
@@ -229,7 +317,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (Result, error) {
 		RunID:                runID,
 		TaskID:               taskID,
 		ProjectID:            st.ProjectID,
-		PhaseID:              string(phaseID),
+		PhaseID:              phaseID,
 		ProductRoot:          root,
 		Baseline:             baseline,
 		PacketRef:            packetRel,
@@ -257,7 +345,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (Result, error) {
 		Kind:    state.KindResult,
 		Name:    name,
 		RunID:   runID,
-		PhaseID: string(phaseID),
+		PhaseID: phaseID,
 		Payload: state.Payload(map[string]any{
 			"invoked":                wres.Invoked,
 			"worker_claimed_success": ex.WorkerClaimedSuccess,
@@ -267,9 +355,9 @@ func (e *Engine) Run(ctx context.Context, req Request) (Result, error) {
 	}); err != nil {
 		return Result{}, err
 	}
-	st.CurrentState = "WORKER_COMPLETED"
+	st.CurrentState = state.StateWorkerClaimedDone
 	if !wres.Invoked {
-		st.CurrentState = "WORKER_REFUSED"
+		st.CurrentState = state.StateWorkerRefused
 	}
 	if err := g.Save(st); err != nil {
 		return Result{}, err
