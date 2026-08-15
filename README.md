@@ -63,6 +63,10 @@ Full walkthrough: [docs/USER_GUIDE.md](docs/USER_GUIDE.md).
 
 Design intent and accepted ADRs remain in [ARCHITECTURE.md](ARCHITECTURE.md) and [ADR/](ADR/). That document is not a substitute for the implemented flow in `docs/FLOW.md`.
 
+## Security
+
+Report undisclosed vulnerabilities privately. See [SECURITY.md](SECURITY.md). Do not file public GitHub issues for them.
+
 ## License
 
 Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE). The Go module path is `github.com/lanternfold/prd-pr`.
