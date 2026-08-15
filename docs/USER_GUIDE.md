@@ -27,13 +27,21 @@ The human is an **exception handler**: unresolved product decisions, missing cre
 
 ## Quick start
 
+**v0.1.0 is not published yet.** Until a GitHub Release exists, install from a clone. Released binaries will become the normal-user installation path once v0.1.0 exists.
+
 ```bash
+git clone https://github.com/lanternfold/prd-pr
+cd prd-pr
+go install ./cmd/prdpr
 prdpr doctor
-prdpr validate-prd path/to/PRD.md
 prdpr path/to/PRD.md
 ```
 
+`go install` puts `prdpr` in your Go bin directory (`GOBIN` or `$(go env GOPATH)/bin`). Add that directory to `PATH` if `prdpr` is not found.
+
 `prdpr <PRD.md>` and `prdpr bootstrap <PRD.md>` are the same PRD-only entry. Do not start by creating a product directory by hand.
+
+`prdpr validate-prd path/to/PRD.md` is an optional diagnostic/preflight if you want to check the PRD contract before bootstrap.
 
 ## Installation and setup
 
@@ -43,7 +51,7 @@ The first versioned release will be **v0.1.0**. It is not published yet.
 
 After a GitHub Release exists, download the `prdpr` artifact that matches your OS and architecture, verify it against the release checksums file, and put the binary on your `PATH`. Then run `prdpr version` and `prdpr doctor`.
 
-Until that release exists, install from a Git checkout.
+Until that release exists, use the clone + `go install ./cmd/prdpr` path in Quick Start.
 
 ### Git checkout (contributors)
 
@@ -148,7 +156,7 @@ Environment that **is** implemented:
 Example, interactive:
 
 1. Author `~/Inbox/my-product.md` to the [PRD contract](PRD_AUTHORING_CONTRACT.md).
-2. `prdpr validate-prd ~/Inbox/my-product.md` — if REJECTED, edit the PRD. Nothing else runs.
+2. Optionally `prdpr validate-prd ~/Inbox/my-product.md` — if REJECTED, edit the PRD. Nothing else runs. Bootstrap also runs the contract gate.
 3. `prdpr ~/Inbox/my-product.md` — engine selects project type, creates `…/Products/<slug>/` when needed, copies `PRD.md`, writes `.project/`, Cursor rules, Git baseline, optional GitHub, then **prepare** (packet on disk).
 4. Open that product directory in Cursor. `/prdpr` (or continue in CLI) implements **only the packet**.
 5. Engine `prdpr verify` runs tests. Worker “done” is ignored.
