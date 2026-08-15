@@ -163,7 +163,7 @@ go test ./...
 go build -o dist/prdpr ./cmd/prdpr
 ```
 
-`go install ./cmd/prdpr` is a source/developer install into Go’s bin directory. Development binaries report `prdpr version` as `dev` unless you set `-ldflags`.
+`go install ./cmd/prdpr` is a source/developer install into Go’s bin directory and reports `prdpr version` as `dev`. `go install github.com/lanternfold/prd-pr/cmd/prdpr@v0.1.0` reports `0.1.0` from Go module build info. GitHub Release binaries report `0.1.0` via `-ldflags`.
 
 **Release builds** inject the version at link time:
 

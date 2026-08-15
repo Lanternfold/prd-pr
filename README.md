@@ -41,7 +41,7 @@ cd prd-pr
 go install ./cmd/prdpr
 ```
 
-`go install` puts the `prdpr` binary in `$GOBIN` if set, otherwise `$GOPATH/bin`, which defaults to `$HOME/go/bin`. If the shell cannot find `prdpr`, add that directory to `PATH`. The binary reports version `dev` unless you set `-ldflags`.
+`go install` puts the `prdpr` binary in `$GOBIN` if set, otherwise `$GOPATH/bin`, which defaults to `$HOME/go/bin`. If the shell cannot find `prdpr`, add that directory to `PATH`. A checkout install (`go install ./cmd/prdpr`) reports version `dev`. A tagged module install (`go install github.com/lanternfold/prd-pr/cmd/prdpr@v0.1.0`) and GitHub Release binaries report `0.1.0`.
 
 **Released binaries (normal users).** Once **v0.1.0** exists, download the GitHub Release artifact for your OS and architecture, verify it against the checksums file, and put `prdpr` on your `PATH`. That tag has not been published yet. Do not expect a release download URL until then.
 
