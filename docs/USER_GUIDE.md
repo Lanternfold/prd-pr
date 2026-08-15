@@ -27,30 +27,67 @@ The human is an **exception handler**: unresolved product decisions, missing cre
 
 ## Quick start
 
+The primary input is a PRD. After `prdpr` is on your `PATH`:
+
 ```bash
-git clone https://github.com/lanternfold/prd-pr
-cd prd-pr
-go build -o dist/prdpr ./cmd/prdpr
-export PATH="$PWD/dist:$PATH"
 prdpr doctor
-prdpr validate-prd path/to/PRD.md
 prdpr path/to/PRD.md
 ```
 
-`prdpr <PRD.md>` and `prdpr bootstrap <PRD.md>` are the same PRD-only entry. Do not start by creating a product directory by hand.
+`prdpr <PRD.md>` and `prdpr bootstrap <PRD.md>` are the same PRD-only entry. The engine validates the PRD as part of that command. Do not start by creating a product directory by hand.
+
+Optional diagnostic (no project mutation):
+
+```bash
+prdpr validate-prd path/to/PRD.md
+```
 
 ## Installation and setup
+
+### Install from source
+
+Requires Go (version in `go.mod`) and Git. From a clone of this repository:
+
+```bash
+go install ./cmd/prdpr
+```
+
+`go install` writes `prdpr` to `$GOBIN` if set, otherwise `$GOPATH/bin` (default `$HOME/go/bin`). Add that directory to `PATH` if the shell cannot find `prdpr`.
+
+GitHub Release binaries are the planned V0 distribution path. They are not published yet.
+
+### Contributor / developer build
+
+Clone, test, and keep a local binary under `dist/` (does not install to `PATH`):
+
+```bash
+git clone https://github.com/lanternfold/prd-pr
+cd prd-pr
+go test ./...
+go build -o dist/prdpr ./cmd/prdpr
+./dist/prdpr doctor
+```
+
+See [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md).
+
+### Check the environment
+
+```bash
+prdpr doctor
+```
+
+Reports OS, architecture, Go, Git, Cursor editor, Cursor Agent, and GitHub CLI. Missing Git is an error. Missing Cursor or `gh` is informational.
 
 ### Prerequisites
 
 | Requirement | Status |
 |---|---|
-| Go (version in `go.mod`) | Required to build |
+| Go (version in `go.mod`) | Required to install or build from source |
 | Git | Required |
-| A PRD that can pass contract validation | Required |
+| A PRD (contract-validated during `prdpr <PRD.md>`) | Required |
 | Studio layout (`Tools/`, `Products/`, …) or `PRDPR_STUDIO` | Required for PRD-only bootstrap |
 | Cursor IDE | Required for interactive `/prdpr` |
-| `prdpr` on `PATH` (or `dist/prdpr` in this repo) | Required |
+| `prdpr` on `PATH` | Required for the normal workflow |
 | `cursor-agent` | Required only for headless `prdpr run` / `prdpr phase` |
 | `gh` + GitHub auth | Optional; needed when GitHub delivery is enabled |
 
@@ -85,10 +122,10 @@ If Auto-review blocks engine commands (`prdpr verify`, tests, Git), approve the 
 
 For a first local run:
 
-- `prdpr` on `PATH`
+- `prdpr` on `PATH` (see install above)
 - Git
 - A discoverable Studio root (`PRDPR_STUDIO` or a parent that looks like Studio)
-- A VALID PRD
+- A PRD that the engine can accept (it validates during `prdpr <PRD.md>`)
 
 ### Optional configuration
 
@@ -121,8 +158,8 @@ Environment that **is** implemented:
 Example, interactive:
 
 1. Author `~/Inbox/my-product.md` to the [PRD contract](PRD_AUTHORING_CONTRACT.md).
-2. `prdpr validate-prd ~/Inbox/my-product.md` — if REJECTED, edit the PRD. Nothing else runs.
-3. `prdpr ~/Inbox/my-product.md` — engine selects project type, creates `…/Products/<slug>/` when needed, copies `PRD.md`, writes `.project/`, Cursor rules, Git baseline, optional GitHub, then **prepare** (packet on disk).
+2. Optionally `prdpr validate-prd ~/Inbox/my-product.md` to inspect the contract without creating a project. If REJECTED, edit the PRD. This step is diagnostic; it is not required before the product command.
+3. `prdpr ~/Inbox/my-product.md` — engine validates the PRD, selects project type, creates `…/Products/<slug>/` when needed, copies `PRD.md`, writes `.project/`, Cursor rules, Git baseline, optional GitHub, then **prepare** (packet on disk).
 4. Open that product directory in Cursor. `/prdpr` (or continue in CLI) implements **only the packet**.
 5. Engine `prdpr verify` runs tests. Worker “done” is ignored.
 6. On failure: `review` → maybe `repair` (max 3 product attempts) → verify again.
@@ -139,7 +176,7 @@ Typical stops:
 
 | Situation | What you do |
 |---|---|
-| Contract REJECTED | Edit the PRD; run `validate-prd` again |
+| Contract REJECTED | Edit the PRD; optionally `validate-prd`, then `prdpr <PRD.md>` again |
 | Ambiguous platform / Studio placement | Answer the one question; do not invent a stack |
 | Completeness `BLOCKING_QUESTION` (only if an LLM adapter is configured) | Put the decision in the PRD; re-validate |
 | Missing credential | Confirm **presence** of one named secret; do not paste the value into logs |

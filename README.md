@@ -1,6 +1,12 @@
 # PRD→PR
 
-PRD→PR is a local engineering orchestrator. You give it a product requirements document. It validates that PRD, creates or locates a project, and drives implementation through a phase graph until the work is verified and delivered.
+PRD→PR is a local engineering orchestrator. Its **primary input is a PRD**. The normal workflow is:
+
+```bash
+prdpr path/to/PRD.md
+```
+
+The engine validates that PRD, creates or locates a project, and drives implementation through a phase graph until the work is verified and delivered. You do not need to run a separate validation command first.
 
 The Go engine is the source of truth. Cursor is an implementation actor. Cursor saying “done” is not verification.
 
@@ -23,24 +29,59 @@ This repository is a working V1. Capabilities are not equally complete. See [doc
 
 Default tests do not call paid LLM APIs or live Cursor.
 
-## Quick start
+## Install
 
-1. Install Go (see `go.mod`) and Git.
-2. Build the engine:
+Requires [Go](https://go.dev/dl/) (version in `go.mod`) and Git.
+
+**From source (current install path):**
 
 ```bash
-go build -o dist/prdpr ./cmd/prdpr
-export PATH="$PWD/dist:$PATH"
+git clone https://github.com/lanternfold/prd-pr
+cd prd-pr
+go install ./cmd/prdpr
 ```
 
-3. Write a PRD that can pass `prdpr validate-prd`. See [docs/PRD_AUTHORING_CONTRACT.md](docs/PRD_AUTHORING_CONTRACT.md).
-4. Run:
+`go install` puts the `prdpr` binary in `$GOBIN` if set, otherwise `$GOPATH/bin`, which defaults to `$HOME/go/bin`. If the shell cannot find `prdpr`, add that directory to `PATH`.
+
+**GitHub Release binaries** are the planned V0 distribution path. They are **not published yet**. Do not expect a release download URL.
+
+**Contributors / developers** can clone and build a local binary instead of installing:
+
+```bash
+git clone https://github.com/lanternfold/prd-pr
+cd prd-pr
+go test ./...
+go build -o dist/prdpr ./cmd/prdpr
+./dist/prdpr doctor
+```
+
+See [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md).
+
+## Quick start
+
+1. Install so `prdpr` is on your `PATH` (see above).
+2. Check the environment:
+
+```bash
+prdpr doctor
+```
+
+`doctor` reports OS, architecture, Go, Git, Cursor editor, Cursor Agent, and GitHub CLI. Missing Git is an error. Missing Cursor or `gh` is informational.
+
+3. Write a PRD. See [docs/PRD_AUTHORING_CONTRACT.md](docs/PRD_AUTHORING_CONTRACT.md).
+4. Run the product:
 
 ```bash
 prdpr path/to/PRD.md
 ```
 
-That is the intended entry point: a **PRD path**, not a manually prepared product directory. PRD→PR places a Studio project when needed, then prepares the next READY phase.
+That is the intended entry point: a **PRD path**. The engine contract-validates the PRD as part of this command, places a Studio project when needed, then prepares the next READY phase.
+
+Optional explicit validation (no project mutation; useful when authoring or debugging a PRD):
+
+```bash
+prdpr validate-prd path/to/PRD.md
+```
 
 Interactive Cursor: install the thin plugin in [prdpr-cursor/](prdpr-cursor/README.md) and run `/prdpr`. Headless: `prdpr phase` (uses `cursor-agent`). Do not mix those paths in one session.
 
@@ -51,14 +92,12 @@ Full walkthrough: [docs/USER_GUIDE.md](docs/USER_GUIDE.md).
 | Audience | Start here |
 |---|---|
 | New user | [docs/USER_GUIDE.md](docs/USER_GUIDE.md) |
-| CLI commands | [docs/CLI.md](docs/CLI.md) |
-| How it actually works | [docs/FLOW.md](docs/FLOW.md) |
-| Graph and loops | [docs/GRAPH_AND_LOOPS.md](docs/GRAPH_AND_LOOPS.md) |
-| P0–P13 | [docs/PHASES.md](docs/PHASES.md) |
+| Contributor / developer | [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) |
 | Cursor | [docs/CURSOR.md](docs/CURSOR.md) |
 | Git/GitHub | [docs/GIT_GITHUB.md](docs/GIT_GITHUB.md) |
-| LLM vs human vs code | [docs/LLM_AND_HUMAN.md](docs/LLM_AND_HUMAN.md) |
-| Contributor / developer | [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) |
+| Security reporting | [SECURITY.md](SECURITY.md) |
+| CLI commands | [docs/CLI.md](docs/CLI.md) |
+| How it actually works | [docs/FLOW.md](docs/FLOW.md) |
 | Docs index | [docs/README.md](docs/README.md) |
 
 Design intent and accepted ADRs remain in [ARCHITECTURE.md](ARCHITECTURE.md) and [ADR/](ADR/). That document is not a substitute for the implemented flow in `docs/FLOW.md`.
