@@ -21,33 +21,138 @@ const (
 	EventsFileName = "events.jsonl"
 	LockFileName   = "LOCK"
 
-	StatusCreated = "PROJECT_CREATED"
+	StatusCreated          = "PROJECT_CREATED"
+	StatusProjectCompleted = "PROJECT_COMPLETED"
 
 	KindIntent = "intent"
 	KindResult = "result"
 
-	EventProjectInitialized = "project_initialized"
-	EventRunStarted         = "run_started"
-	EventStateChanged       = "state_changed"
-	EventRunEnded           = "run_ended"
-	EventWorkerInvoked      = "worker_invoked"
-	EventWorkerFinished     = "worker_finished"
-	EventWorkerRefused      = "worker_refused"
+	EventProjectInitialized        = "project_initialized"
+	EventRunStarted                = "run_started"
+	EventStateChanged              = "state_changed"
+	EventRunEnded                  = "run_ended"
+	EventWorkerInvoked             = "worker_invoked"
+	EventWorkerFinished            = "worker_finished"
+	EventWorkerRefused             = "worker_refused"
+	EventPrepared                  = "prepared"
+	EventPrepareRefused            = "prepare_refused"
+	EventVerificationStarted       = "verification_started"
+	EventVerificationTestCompleted = "verification_test_completed"
+	EventVerificationPassed        = "verification_passed"
+	EventVerificationFailed        = "verification_failed"
+	EventReviewStarted             = "review_started"
+	EventReviewCompleted           = "review_completed"
+	EventReviewFailed              = "review_failed"
+	EventRepairStarted             = "repair_started"
+	EventRepairAttempt             = "repair_attempt"
+	EventRepairExhausted           = "repair_exhausted"
+	EventHumanRequested            = "human_requested"
+	EventHumanResolved             = "human_resolved"
+	EventHumanTimeout              = "human_timeout"
+	EventPhaseCompleted            = "phase_completed"
+	EventCommitCreated             = "commit_created"
+	EventPushSkipped               = "push_skipped"
+	EventPushSucceeded             = "push_succeeded"
+	EventPushFailed                = "push_failed"
+	EventRepoDiscovered            = "repo_discovered"
+	EventRepoCreated               = "repo_created"
+	EventRepoBootstrapped          = "repo_bootstrapped"
+	EventRepoSkipped               = "repo_skipped"
+	EventPROpened                  = "pr_opened"
+	EventPRReused                  = "pr_reused"
+	EventBranchCreated             = "branch_created"
+	EventBranchReused              = "branch_reused"
+	EventMergeBlocked              = "merge_blocked"
+	EventMergeCompleted            = "merge_completed"
+	EventBranchDeleted             = "branch_deleted"
+	EventGitHubBlocked             = "github_blocked"
+	EventKnowledgeUpdated          = "knowledge_updated"
+	EventCostRecorded              = "cost_recorded"
+	EventSubagentDecision          = "subagent_decision"
+	EventRecovered                 = "recovered"
+
+	StatePrepared               = "PREPARED"
+	StateWorkerRunning          = "WORKER_RUNNING"
+	StateWorkerClaimedDone      = "WORKER_CLAIMED_DONE"
+	StateVerifying              = "VERIFYING"
+	StateVerified               = "VERIFIED"
+	StateWorkerRefused          = "WORKER_REFUSED"
+	StateVerificationFailed     = "VERIFICATION_FAILED"
+	StateVerificationIncomplete = "VERIFICATION_INCOMPLETE"
+	StateReviewing              = "REVIEWING"
+	StateRepairing              = "REPAIRING"
+	StateWaitingForHuman        = "WAITING_FOR_HUMAN"
+	StateFailed                 = "FAILED"
+	StateCompleted              = "COMPLETED"
+
+	PushSkipped = "skipped"
+	PushPending = "pending"
+	PushPushed  = "pushed"
+	PushFailed  = "PUSH_FAILED"
+
+	GitHubDisabled    = "disabled"
+	GitHubUnavailable = "unavailable"
+	GitHubExists      = "exists"
+	GitHubCreated     = "created"
+	GitHubMissing     = "missing"
+	GitHubSkipped     = "skipped"
+
+	RepoTypeLocal  = "local"
+	RepoTypeGitHub = "github"
+
+	PRWaitingForMerge = "PR_WAITING_FOR_MERGE"
+	MergeMerged       = "merged"
+	MergeBlocked      = "blocked"
+
+	GitHubActionBlocked = "GITHUB ACTION BLOCKED"
 )
 
 // State is the current-project snapshot. It is the source of truth for resume.
 type State struct {
-	SchemaVersion       int    `json:"schema_version"`
-	ProjectID           string `json:"project_id"`
-	ProductRoot         string `json:"product_root"`
-	ProjectStatus       string `json:"project_status"`
-	CurrentRunID        string `json:"current_run_id"`
-	CurrentPhaseID      string `json:"current_phase_id"`
-	CurrentState        string `json:"current_state"`
-	CurrentCommit       string `json:"current_commit"`
-	LastKnownGoodCommit string `json:"last_known_good_commit"`
-	CreatedAt           string `json:"created_at"`
-	UpdatedAt           string `json:"updated_at"`
+	SchemaVersion       int        `json:"schema_version"`
+	ProjectID           string     `json:"project_id"`
+	ProductRoot         string     `json:"product_root"`
+	ProjectStatus       string     `json:"project_status"`
+	CurrentRunID        string     `json:"current_run_id"`
+	CurrentPhaseID      string     `json:"current_phase_id"`
+	CurrentState        string     `json:"current_state"`
+	CurrentCommit       string     `json:"current_commit"`
+	LastKnownGoodCommit string     `json:"last_known_good_commit"`
+	Repository          Repository `json:"repository,omitempty"`
+	CreatedAt           string     `json:"created_at"`
+	UpdatedAt           string     `json:"updated_at"`
+}
+
+// Repository is the product Git/GitHub lifecycle snapshot. It never stores credentials.
+type Repository struct {
+	Type                string            `json:"type,omitempty"`
+	LocalRoot           string            `json:"local_root,omitempty"`
+	RemoteName          string            `json:"remote_name,omitempty"`
+	RemoteURL           string            `json:"remote_url,omitempty"`
+	Branch              string            `json:"branch,omitempty"`
+	InitialCommitSHA    string            `json:"initial_commit_sha,omitempty"`
+	LatestCheckpointSHA string            `json:"latest_checkpoint_sha,omitempty"`
+	CommitStatus        string            `json:"commit_status,omitempty"`
+	PushStatus          string            `json:"push_status,omitempty"`
+	GitHubStatus        string            `json:"github_status,omitempty"`
+	SkipReason          string            `json:"skip_reason,omitempty"`
+	PhaseCheckpoints    map[string]string `json:"phase_checkpoints,omitempty"`
+	BaseBranch          string            `json:"base_branch,omitempty"`
+	FeatureBranch       string            `json:"feature_branch,omitempty"`
+	BranchState         string            `json:"branch_state,omitempty"`
+	BranchSHA           string            `json:"branch_sha,omitempty"`
+	PRNumber            string            `json:"pr_number,omitempty"`
+	PRURL               string            `json:"pr_url,omitempty"`
+	PRHead              string            `json:"pr_head,omitempty"`
+	PRBase              string            `json:"pr_base,omitempty"`
+	PRSHA               string            `json:"pr_sha,omitempty"`
+	PRCreatedAt         string            `json:"pr_created_at,omitempty"`
+	MergeSHA            string            `json:"merge_sha,omitempty"`
+	MergeMethod         string            `json:"merge_method,omitempty"`
+	MergeAt             string            `json:"merge_at,omitempty"`
+	MergeStatus         string            `json:"merge_status,omitempty"`
+	ChecksStatus        string            `json:"checks_status,omitempty"`
+	GitHubBlock         string            `json:"github_block,omitempty"`
 }
 
 // Event is one append-only journal line. It is not the source of truth.
