@@ -65,4 +65,4 @@ Design intent and accepted ADRs remain in [ARCHITECTURE.md](ARCHITECTURE.md) and
 
 ## License
 
-See repository policy for this checkout. The Go module path is `github.com/lanternfold/prd-pr`.
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE). The Go module path is `github.com/lanternfold/prd-pr`.
