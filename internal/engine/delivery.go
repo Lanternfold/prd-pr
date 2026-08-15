@@ -163,6 +163,9 @@ func (e *Engine) ensurePRLocked(ctx context.Context, g *state.Guard, st state.St
 		st.Repository.PRCreatedAt = e.opts.Now().UTC().Format("2006-01-02T15:04:05Z07:00")
 	}
 	st.Repository.GitHubBlock = ""
+	if st.Repository.MergeStatus != state.PRMerged {
+		st.Repository.MergeStatus = state.PROpen
+	}
 	return st, pr, nil
 }
 
@@ -176,30 +179,63 @@ func (e *Engine) InspectChecks(ctx context.Context, root string) ci.Report {
 		return ci.Report{Available: false, Status: ci.StatusSkipped, Detail: "GitHub disabled"}
 	}
 	pr := ""
-	if snap, err := state.Open(root); err == nil {
-		if st, lerr := snap.Load(); lerr == nil {
+	store, err := state.Open(root)
+	if err == nil {
+		if st, lerr := store.Load(); lerr == nil {
 			pr = st.Repository.PRNumber
 		}
 	}
+	var rep ci.Report
 	if pr != "" {
-		return e.opts.CI.PRChecks(ctx, root, pr)
+		rep = e.opts.CI.PRChecks(ctx, root, pr)
+	} else {
+		rep = e.opts.CI.Status(ctx, root)
 	}
-	return e.opts.CI.Status(ctx, root)
+	if store == nil {
+		return rep
+	}
+	g, lerr := store.Lock()
+	if lerr != nil {
+		return rep
+	}
+	defer func() { _ = g.Unlock() }()
+	st, lerr := g.Load()
+	if lerr != nil {
+		return rep
+	}
+	if st.Repository.MergeStatus == state.PRMerged {
+		return rep
+	}
+	st.Repository.ChecksStatus = rep.Verdict()
+	switch rep.Verdict() {
+	case ci.VerdictPending:
+		st.Repository.MergeStatus = state.PRChecking
+	case ci.VerdictPass:
+		if st.Repository.PRNumber != "" && st.Repository.MergeStatus == "" {
+			st.Repository.MergeStatus = state.PROpen
+		}
+	default:
+		if st.Repository.PRNumber != "" && st.Repository.MergeStatus == "" {
+			st.Repository.MergeStatus = state.PROpen
+		}
+	}
+	_ = g.Save(st)
+	return rep
 }
 
 func EvaluateMerge(cfg config.Config, st state.State, ex Execution, pr vcs.PR, checks ci.Report, v *testeng.Result) MergeDecision {
 	wait := func(reason string) MergeDecision {
 		return MergeDecision{Allow: false, Status: state.PRWaitingForMerge, Reason: reason}
 	}
-	if !cfg.AutoMergeEnabled {
-		return wait("AutoMergeEnabled is false")
+	checking := func(reason string) MergeDecision {
+		return MergeDecision{Allow: false, Status: state.PRChecking, Reason: reason}
 	}
 	if pr.Number == "" && st.Repository.PRNumber == "" {
 		return wait("PR does not exist")
 	}
 	if pr.State != "" && pr.State != "open" {
 		if pr.State == "merged" {
-			return MergeDecision{Allow: false, Status: state.MergeMerged, Reason: "PR already merged"}
+			return MergeDecision{Allow: false, Status: state.PRMerged, Reason: "PR already merged"}
 		}
 		return wait("PR is not open")
 	}
@@ -228,9 +264,12 @@ func EvaluateMerge(cfg config.Config, st state.State, ex Execution, pr vcs.PR, c
 	if st.CurrentState != state.StateVerified && st.CurrentState != state.StateCompleted {
 		return wait("local verification has not passed")
 	}
-	verdict := checks.Verdict()
+	verdict, reason := checks.RequiredVerdict(cfg.RequiredChecks)
+	if verdict == ci.VerdictPending {
+		return checking(reason)
+	}
 	if verdict != ci.VerdictPass {
-		return wait("required CI checks are " + verdict)
+		return wait(reason)
 	}
 	if strings.EqualFold(pr.Mergeable, "CONFLICTING") || strings.EqualFold(pr.Mergeable, "CONFLICT") {
 		return wait("merge conflict")
@@ -238,7 +277,10 @@ func EvaluateMerge(cfg config.Config, st state.State, ex Execution, pr vcs.PR, c
 	if cfg.RequireApproval && !strings.EqualFold(pr.ReviewDecision, "APPROVED") {
 		return wait("approval policy is not satisfied")
 	}
-	return MergeDecision{Allow: true, Status: "ready"}
+	if !cfg.AutoMergeEnabled {
+		return wait("AutoMergeEnabled is false")
+	}
+	return MergeDecision{Allow: true, Status: state.PRReadyToMerge}
 }
 
 func (e *Engine) TryMerge(ctx context.Context, root string) (MergeDecision, vcs.MergeResult, error) {
@@ -289,9 +331,9 @@ func (e *Engine) mergeLocked(ctx context.Context, g *state.Guard, st state.State
 		return MergeDecision{Allow: false, Status: state.PRWaitingForMerge, Reason: block.Error()}, vcs.MergeResult{}, nil
 	}
 	if strings.EqualFold(pr.State, "merged") {
-		st.Repository.MergeStatus = state.MergeMerged
+		st = e.recordMerged(g, st, pr, vcs.MergeResult{Merged: true, SHA: firstNonEmpty(st.Repository.MergeSHA, pr.SHA), Method: firstNonEmpty(st.Repository.MergeMethod, cfg.MergeMethodName())}, cfg)
 		_ = g.Save(st)
-		return MergeDecision{Allow: false, Status: state.MergeMerged, Reason: "PR already merged"}, vcs.MergeResult{Merged: true, SHA: pr.SHA}, nil
+		return MergeDecision{Allow: false, Status: state.PRMerged, Reason: "PR already merged"}, vcs.MergeResult{Merged: true, SHA: st.Repository.MergeSHA}, nil
 	}
 	checks := e.opts.CI.PRChecks(ctx, root, pr.Number)
 	st.Repository.ChecksStatus = checks.Verdict()
@@ -324,29 +366,71 @@ func (e *Engine) mergeLocked(ctx context.Context, g *state.Guard, st state.State
 		_ = g.Save(st)
 		return MergeDecision{Allow: false, Status: state.PRWaitingForMerge, Reason: res.Reason}, res, nil
 	}
-	st.Repository.MergeSHA = res.SHA
-	st.Repository.MergeMethod = cfg.MergeMethodName()
-	st.Repository.MergeAt = e.opts.Now().UTC().Format("2006-01-02T15:04:05Z07:00")
-	st.Repository.MergeStatus = state.MergeMerged
+	st = e.recordMerged(g, st, pr, res, cfg)
+	st = e.cleanupMergedBranch(ctx, g, st, root, pr, cfg)
+	_ = g.Save(st)
+	return dec, res, nil
+}
+
+func (e *Engine) recordMerged(g *state.Guard, st state.State, pr vcs.PR, res vcs.MergeResult, cfg config.Config) state.State {
+	already := st.Repository.MergeStatus == state.PRMerged && st.Repository.MergeSHA != ""
+	if pr.Number != "" {
+		st.Repository.PRNumber = pr.Number
+	}
+	st.Repository.MergeSHA = firstNonEmpty(st.Repository.MergeSHA, res.SHA, pr.SHA)
+	st.Repository.MergeMethod = firstNonEmpty(st.Repository.MergeMethod, res.Method, cfg.MergeMethodName())
+	if st.Repository.MergeAt == "" {
+		st.Repository.MergeAt = e.opts.Now().UTC().Format("2006-01-02T15:04:05Z07:00")
+	}
+	st.Repository.MergeStatus = state.PRMerged
+	st.Repository.MergeBranch = firstNonEmpty(st.Repository.MergeBranch, pr.Head, st.Repository.FeatureBranch, st.Repository.Branch)
+	st.Repository.MergeRepository = firstNonEmpty(st.Repository.MergeRepository, st.Repository.RemoteURL, strings.Trim(cfg.GitHubOwner+"/"+cfg.GitHubRepo, "/"))
+	st.Repository.GitHubBlock = ""
+	if already {
+		return st
+	}
 	_ = g.AppendEvent(state.Event{
 		Kind:    state.KindResult,
 		Name:    state.EventMergeCompleted,
 		RunID:   st.CurrentRunID,
 		PhaseID: st.CurrentPhaseID,
-		Payload: state.Payload(map[string]string{"sha": res.SHA, "number": pr.Number, "method": cfg.MergeMethodName(), "branch": pr.Head}),
+		Payload: state.Payload(map[string]string{
+			"sha":        st.Repository.MergeSHA,
+			"number":     st.Repository.PRNumber,
+			"method":     st.Repository.MergeMethod,
+			"branch":     st.Repository.MergeBranch,
+			"repository": st.Repository.MergeRepository,
+			"merged_at":  st.Repository.MergeAt,
+		}),
 	})
-	if cfg.DeleteBranchAfterMerge && pr.Head != "" && pr.Head != cfg.Branch() {
-		_ = e.opts.Git.DeleteRemoteBranch(ctx, root, cfg.Remote(), pr.Head)
-		if err := e.opts.Git.DeleteBranch(ctx, root, pr.Head); err == nil {
-			st.Repository.BranchState = "deleted"
-			_ = g.AppendEvent(state.Event{Kind: state.KindResult, Name: state.EventBranchDeleted, Payload: state.Payload(map[string]string{"branch": pr.Head})})
+	return st
+}
+
+func (e *Engine) cleanupMergedBranch(ctx context.Context, g *state.Guard, st state.State, root string, pr vcs.PR, cfg config.Config) state.State {
+	if !cfg.DeleteBranchAfterMerge {
+		if err := e.opts.Git.FastForwardBase(ctx, root, cfg.Branch(), cfg.Remote()); err != nil {
+			_ = g.AppendEvent(state.Event{Kind: state.KindResult, Name: state.EventMergeBlocked, Payload: state.Payload(map[string]string{"reason": "local base not updated: " + err.Error()})})
 		}
+		return st
+	}
+	head := firstNonEmpty(pr.Head, st.Repository.FeatureBranch, st.Repository.MergeBranch)
+	if head == "" || head == cfg.Branch() {
+		return st
+	}
+	br, _ := e.opts.Git.InspectBranch(ctx, root, head)
+	if !br.Exists {
+		st.Repository.BranchState = "deleted"
+		return st
+	}
+	_ = e.opts.Git.DeleteRemoteBranch(ctx, root, cfg.Remote(), head)
+	if err := e.opts.Git.DeleteBranch(ctx, root, head); err == nil {
+		st.Repository.BranchState = "deleted"
+		_ = g.AppendEvent(state.Event{Kind: state.KindResult, Name: state.EventBranchDeleted, Payload: state.Payload(map[string]string{"branch": head})})
 	}
 	if err := e.opts.Git.FastForwardBase(ctx, root, cfg.Branch(), cfg.Remote()); err != nil {
 		_ = g.AppendEvent(state.Event{Kind: state.KindResult, Name: state.EventMergeBlocked, Payload: state.Payload(map[string]string{"reason": "local base not updated: " + err.Error()})})
 	}
-	_ = g.Save(st)
-	return dec, res, nil
+	return st
 }
 
 func (e *Engine) recordGitHubBlock(g *state.Guard, st state.State, block GitHubBlock) state.State {

@@ -34,7 +34,7 @@ func TestPreflightBlockedMissingAgent(t *testing.T) {
 	root := cliGitPRD(t)
 	rt := preflightRuntime("git")
 	stdout, stderr := new(bytes.Buffer), new(bytes.Buffer)
-	code := Main([]string{"prdpr", "preflight", root}, stdout, stderr, rt)
+	code := Main([]string{"prdpr", "preflight", "--mode", "headless", root}, stdout, stderr, rt)
 	if code != exitError {
 		t.Fatalf("exit %d want 1 stdout=%q", code, stdout.String())
 	}
@@ -44,6 +44,26 @@ func TestPreflightBlockedMissingAgent(t *testing.T) {
 	}
 	if strings.Contains(out, "✓") && !strings.Contains(out, "Cursor Agent") {
 		t.Fatalf("expected cursor agent section:\n%s", out)
+	}
+}
+
+func TestPreflightInteractiveReadyWithoutAgent(t *testing.T) {
+	root := cliGitPRD(t)
+	rt := preflightRuntime("git")
+	stdout, stderr := new(bytes.Buffer), new(bytes.Buffer)
+	code := Main([]string{"prdpr", "preflight", "--mode", "interactive", "--json", root}, stdout, stderr, rt)
+	if code != exitOK {
+		t.Fatalf("exit %d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var r preflight.Report
+	if err := json.Unmarshal(stdout.Bytes(), &r); err != nil {
+		t.Fatal(err)
+	}
+	if r.Status != preflight.OverallReady {
+		t.Fatalf("status=%s blocking=%v", r.Status, r.Blocking)
+	}
+	if r.ExecutionMode != preflight.ModeInteractive {
+		t.Fatalf("mode=%s", r.ExecutionMode)
 	}
 }
 

@@ -6,6 +6,8 @@
 
 This plan is the bridge from architecture to coding. It preserves PRD phase **identity and scope** while recording **delivery slices** and **runtime invariants** that do not get their own phase IDs.
 
+Layers (ADR-012): **core engine** (Go) · **CLI interface** · **Cursor plugin interface** (primary UX; Plugin V0 in `prdpr-cursor/`) · **worker adapters** (P4). Do not collapse plugin and worker.
+
 **MVP goal:** prove **orchestration**, not model quality. Do not spend money on LLM calls before the deterministic loop works.
 
 ---
@@ -16,20 +18,20 @@ Product and engineering share one catalog. Names and IDs come from PRD §52:
 
 | ID | Name | Status |
 |---|---|---|
-| P0 | Skeleton (CLI + state + init + doctor) | Done (two delivery slices) |
-| P1 | PRD Parser | Done |
-| P2 | Graph Engine | Done |
-| P3 | Preflight | Not started (advisory readiness report; P4 remains the fail-closed runtime gate) |
-| P4 | Cursor Worker | Done |
-| P5 | Git/GitHub | Not started |
-| P6 | CI Integration | Not started |
-| P7 | Test Engine | Not started |
-| P8 | Review + Model Router | Not started |
-| P9 | Self-Fix | Not started |
-| P10 | Human Interaction | Not started |
-| P11 | Learning | Not started |
-| P12 | Subagent / Optimization | Not started (V1: `NO_SUBAGENT`, ADR-007) |
-| P13 | Self-Dogfooding | Not started |
+| P0 | Skeleton (CLI + state + init + doctor) | PASS (two delivery slices) |
+| P1 | PRD Parser | PASS |
+| P2 | Graph Engine | PASS |
+| P3 | Preflight | PASS |
+| P4 | Cursor Worker | PASS |
+| P5 | Git/GitHub | PASS (local lifecycle + optional gh; GitHub not required for local dogfood) |
+| P6 | CI Integration | PASS (orchestrator Actions workflow + optional watch) |
+| P7 | Test Engine | PASS |
+| P8 | Review + Model Router | PASS |
+| P9 | Self-Fix | PASS |
+| P10 | Human Interaction | PASS |
+| P11 | Learning | PASS |
+| P12 | Subagent / Optimization | PASS (V1: `NO_SUBAGENT`, ADR-007) |
+| P13 | Self-Dogfooding | PASS (disposable fixture loop; not self-modification of this repo) |
 
 Build-order edges are the **explicit Dependencies** in PRD §52. The DAG engine must not infer edges from numbering or document order.
 
@@ -124,10 +126,11 @@ That slice is **First Dogfood Milestone**, after P0, P1, P2, P3 (readiness repor
 
 - Go module `github.com/lanternfold/prd-pr`, binary `prdpr`.
 - Conceptual packages: `internal/engine` coordinates; other `internal/*` are capabilities. Exact folder names may change if they stay faithful to this split.
-- No MCP, no database, no extra services (ADR-009).
-- Tests: unit + fakes. No live Cursor/GitHub/LLM in default `go test`.
+- No MCP, no database, no extra services (ADR-009). Cursor plugin is a UX adapter, not MCP (ADR-012).
+- Tests: unit + fakes. No live Cursor/GitHub/LLM in default `go test`. The core engine must not require Cursor IDE.
 - Human involvement until P10 is **us building the tool**, not the product’s human-workflow feature.
 - Do **not** introduce: database, MCP, agent framework, message queue, cloud worker, daemon, vector DB, multi-agent execution, or parallel workers.
+- Do **not** collapse the Cursor plugin (UX) with the Cursor worker (P4). Plugin V0 lives in `prdpr-cursor/` and must not launch `cursor-agent`.
 
 **Structured IDs (known limitation):** Architecture expects `REQ-*` / `AC-*` / `TEST-*` on product PRDs when present. This repo’s `PRD.md` currently illustrates the format and does not yet carry a full ID inventory. Do not invent IDs. Parser and planner must tolerate missing IDs with diagnostics, not silent fabrication (OAQ-6).
 
@@ -137,7 +140,7 @@ That slice is **First Dogfood Milestone**, after P0, P1, P2, P3 (readiness repor
 
 **Objective.** Go CLI + durable project state: binary, version/help, `doctor`, `prdpr init`, `.project/state.json`, events, lock, product-root jail.
 
-**Why.** Everything hangs off one binary (ADR-001). Resume/lock must be real before long runs (ADR-002).
+**Why.** The core engine hangs off one binary (ADR-001). Resume/lock must be real before long runs (ADR-002). The Cursor plugin is not P0 (ADR-012).
 
 **Dependencies.** None.
 
@@ -225,11 +228,13 @@ That slice is **First Dogfood Milestone**, after P0, P1, P2, P3 (readiness repor
 
 **Definition of Done.** Fixture `prdpr run` (or `--mvp`) invokes worker or fake, writes `execution.json`, prints claim plus observed changes. Pin Cursor CLI version when the real adapter lands (OAQ-8).
 
-**Defer.** Live LLM planner, multi-step sessions, repair loop, self-dogfood, pointing Cursor at this orchestrator repo.
+**Defer.** Live LLM planner, multi-step sessions, repair loop, self-dogfood, pointing Cursor at this orchestrator repo. **Do not redesign P4 into a Cursor plugin.** Plugin UX is a separate interface milestone (ADR-012).
 
 ---
 
 ## P5 — Git / GitHub
+
+**Status:** PASS.
 
 **Objective.** Broader Git lifecycle and GitHub integration: commits, branches, pushes, remote state, and **one PR per run/milestone** (ADR-011). Never merge default unless configured.
 
@@ -256,6 +261,8 @@ The **minimum** local Git safety required before Cursor writes (verify repo/prod
 
 ## P6 — CI (GitHub Actions)
 
+**Status:** PASS.
+
 **Objective.** Watch GitHub Actions after a PR exists. Local tests remain the per-phase gate; CI is the milestone gate.
 
 **Why.** Independent remote verification (ADR-005). CI must not block MVP.
@@ -272,21 +279,25 @@ The **minimum** local Git safety required before Cursor writes (verify repo/prod
 
 ## P7 — Test engine
 
+**Status:** PASS.
+
 **Objective.** Orchestrator runs tests **itself** in the product/fixture workspace, parses pass/fail, records the result. MVP verification gate.
 
-**Why.** Independent verification (ADR-005). The worker is never the grader.
+**Why.** Independent verification (ADR-005). The worker is never the grader. Cursor's claim of completion is never verification. Only P7 may set `verified_success = true`.
 
-**Dependencies.** P0, P1 (PRD §52). Runtime sequence still: packet → **P4** git baseline → worker → independent diff → independent tests. The baseline step is P4, not P5.
+**Dependencies.** P0, P1 (PRD §52). Runtime sequence still: packet → **P4** git baseline → worker (or interactive session) → independent diff → independent tests. The baseline step is P4, not P5.
 
-**Files/packages.** `internal/testeng` (local runner only).
+**Files/packages.** `internal/testeng` (local runner only); `prdpr verify`; plugin calls verify after implementation.
 
-**Definition of Done.** After a fixture worker change, `prdpr` runs tests in the fixture and records pass/fail in `.project/` without GitHub Actions.
+**Definition of Done.** After a fixture change, `prdpr verify` runs tests in the fixture and records pass/fail in `.project/` without GitHub Actions. `worker_claimed_success` alone never verifies. Interactive `/prdpr` stops on failed verify (no P8/P9).
 
-**Defer.** Actions watch (P6), iOS/`xcodebuild`, adversarial LLM test generation.
+**Defer.** Actions watch (P6), iOS/`xcodebuild`, adversarial LLM test generation, diagnosis/repair (P8/P9).
 
 ---
 
 ## P8 — Review + Model Router
+
+**Status:** PASS.
 
 **Objective.** Independent review + applicable quality gates. Model Router + LLM **interfaces** (Noop default). Deterministic checks first; live LLM review later.
 
@@ -304,6 +315,8 @@ The **minimum** local Git safety required before Cursor writes (verify repo/prod
 
 ## P9 — Self-Fix
 
+**Status:** PASS.
+
 **Objective.** Classify product vs infrastructure; per-incident 3-attempt repair; rewind via Git SHA; replay affected-set (ADR-006, ADR-003).
 
 **Why.** Self-fixing loop. After first dogfood on purpose.
@@ -320,6 +333,8 @@ The **minimum** local Git safety required before Cursor writes (verify repo/prod
 
 ## P10 — Human interaction
 
+**Status:** PASS.
+
 **Objective.** One question at a time, credential request (Keychain), validation task, 30s single attention notify, `feedback` / `resume`.
 
 **Why.** Blocking input must survive process exit. Not required for first dogfood.
@@ -334,6 +349,8 @@ The **minimum** local Git safety required before Cursor writes (verify repo/prod
 
 ## P11 — Learning
 
+**Status:** PASS.
+
 **Objective.** Phase learning review → observations; promotion pipeline; cost ledger + budget pause.
 
 **Why.** Learning and cost are PRD goals but not required to move code.
@@ -347,6 +364,8 @@ The **minimum** local Git safety required before Cursor writes (verify repo/prod
 ---
 
 ## P12 — Subagent / Optimization
+
+**Status:** PASS (decision interface only; V1 ignores USE_SUBAGENT).
 
 **Objective.** Record `USE_SUBAGENT` / `NO_SUBAGENT`. V1 scheduler **ignores** `USE_SUBAGENT` and runs sequentially (ADR-007).
 
@@ -373,6 +392,8 @@ The **minimum** local Git safety required before Cursor writes (verify repo/prod
 ---
 
 ## P13 — Self-dogfooding
+
+**Status:** PASS (disposable product fixture; orchestrator self-repo remains jail-refused).
 
 **Objective.** Point PRD→PR at `~/Studio/Tools/prd-pr/` with a **small** improvement PRD. Build to `dist/`; never overwrite the running binary (ADR-010).
 
@@ -416,6 +437,8 @@ Then:
 
 P3 can overlap with P4 worker work. P4 must still enforce its own fail-closed checks if P3 is missing. P7 can overlap with remaining P4 polish. **Do not start GitHub/CI/review/repair/human/learning/self-dogfood until the MVP slice has been used on the fixture repository.** Do **not** implement P5 local inspect/baseline as a prerequisite for P4 writes; that capability is already P4.
 
+**Cursor Plugin V0** lives in `prdpr-cursor/`. It is an interface milestone over the engine, not a new phase and not a P4 redesign. Do not start P5 from the plugin.
+
 ---
 
 ## First Dogfood Milestone
@@ -452,9 +475,45 @@ The worker’s own claim of success must **not** count as verification.
 
 **First dogfood requires:** P3 readiness reporting; P4 worker; P4 local Git baseline; independent verification later (P7).
 
-**First dogfood must not require:** P5 GitHub integration, GitHub Actions, a live LLM, self-modification of PRD→PR, a repair loop, the human notification system. Do not wait for P5 local Git lifecycle before P4.
+**First dogfood must not require:** P5 GitHub integration, GitHub Actions, a live LLM, self-modification of PRD→PR, a repair loop, the human notification system, or the Cursor plugin. Do not wait for P5 local Git lifecycle before P4. First dogfood uses the engine CLI (and worker), not Plugin V0.
 
 **Success metric:** one trivial change in the fixture repo is orchestrated end-to-end as above.
+
+---
+
+## Interface milestone: Cursor Plugin V0
+
+**Not a canonical phase.** Do not assign P14 or rename P0–P13. Plugin V0 is a **delivery slice / interface milestone** over the existing engine (ADR-012).
+
+**When:** after the Go engine is independently executable for the workflow the plugin will invoke. Current P0–P4 already provide CLI, parse, graph, preflight, state, planning, and the Cursor **worker**. This milestone does **not** start P5 and does **not** implement new engine functionality.
+
+**Location:** `prdpr-cursor/` (Cursor Plugin format: `.cursor-plugin/plugin.json`, `commands/prdpr.md`, `skills/prdpr/SKILL.md`).
+
+**V0 invocation:** existing `prdpr inspect`, `preflight`, `prepare`, and `status` with an explicit workspace directory. Plugin V0 does **not** call `prdpr run` (that would nest the P4 Cursor worker inside this Cursor session). After `prepare`, the current Cursor session implements the packet. Independent verification is not in this milestone.
+
+**Plugin V0 contains only:**
+
+1. plugin manifest
+2. one `/prdpr` command
+3. one PRD→PR skill
+4. minimal documentation
+
+**Plugin V0 must:**
+
+- invoke the PRD→PR Go engine
+- pass workspace/project context
+- present orchestration state/results
+- guide Cursor through the workflow
+- remain a thin adapter (no duplicated orchestration)
+
+**Plugin V0 must not:**
+
+- maintain orchestration state
+- implement the DAG, repair, retry policy, Git semantics, verification, knowledge, or model routing
+- collapse into the P4 worker adapter
+- add MCP, subagents, hooks, custom agents, SDK, cloud services, databases, or extra commands unless strictly necessary
+
+**Deferred Cursor capabilities (document only):** hooks, additional commands, Cursor Agent SDK adapter, optional subagents, MCP if a concrete need emerges.
 
 ---
 
@@ -471,6 +530,8 @@ Explicitly **not** in the initial build (MVP and first several phases):
 - Worktree isolation for parallelism  
 - MCP, databases, queues, daemons, cloud orchestrator, cloud workers  
 - Agent frameworks  
+- Cursor plugin features beyond V0 (hooks, extra commands, SDK adapter, optional subagents)  
+- Collapsing the Cursor plugin with the P4 worker  
 - Vector DBs  
 - Per-phase GitHub PRs; auto-merge  
 - Vendor SDKs in `engine`  

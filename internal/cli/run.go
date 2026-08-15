@@ -11,6 +11,7 @@ import (
 	"github.com/lanternfold/prd-pr/internal/cursor"
 	"github.com/lanternfold/prd-pr/internal/engine"
 	"github.com/lanternfold/prd-pr/internal/prd"
+	"github.com/lanternfold/prd-pr/internal/preflight"
 )
 
 func runRun(args []string, stdout, stderr io.Writer, rt Runtime) int {
@@ -40,6 +41,7 @@ func runRun(args []string, stdout, stderr io.Writer, rt Runtime) int {
 		ProductRoot: opts.root,
 		PRDPath:     opts.prd,
 		PhaseID:     opts.phase,
+		Mode:        preflight.ModeHeadless,
 	})
 	if err != nil {
 		printStateErr(stderr, err)

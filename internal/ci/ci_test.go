@@ -3,6 +3,7 @@ package ci
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -55,9 +56,33 @@ func TestPRChecksPassFailPendingUnknown(t *testing.T) {
 	}
 }
 
-func TestVerdictUnknownIsNotPass(t *testing.T) {
-	r := Report{Status: StatusUnknown}
-	if r.Verdict() == VerdictPass {
-		t.Fatal("unknown as pass")
+func TestPRChecksEmptyIsUnknown(t *testing.T) {
+	w := &Watcher{
+		LookPath: func(string) (string, error) { return "/bin/gh", nil },
+		GH: func(context.Context, string, ...string) (string, error) {
+			return `[]`, nil
+		},
+	}
+	rep := w.PRChecks(context.Background(), ".", "1")
+	if rep.Status != StatusUnknown || rep.Verdict() == VerdictPass {
+		t.Fatalf("%+v", rep)
+	}
+}
+
+func TestRequiredVerdictMissingFailedPending(t *testing.T) {
+	pass := Report{Status: StatusPassing, Checks: []Check{{Name: "test", Bucket: "pass"}}}
+	v, reason := pass.RequiredVerdict([]string{"ci"})
+	if v != VerdictUnknown || !strings.Contains(reason, "missing") {
+		t.Fatalf("%s %s", v, reason)
+	}
+	fail := Report{Checks: []Check{{Name: "ci", Bucket: "fail"}}}
+	v, reason = fail.RequiredVerdict([]string{"ci"})
+	if v != VerdictFail || !strings.Contains(reason, "failed") {
+		t.Fatalf("%s %s", v, reason)
+	}
+	pend := Report{Checks: []Check{{Name: "ci", Bucket: "pending"}}}
+	v, _ = pend.RequiredVerdict([]string{"ci"})
+	if v != VerdictPending {
+		t.Fatalf("%s", v)
 	}
 }

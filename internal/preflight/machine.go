@@ -68,7 +68,7 @@ func InspectMachine(env Env) Machine {
 	return m
 }
 
-func addMachineChecks(r *Report, m Machine) {
+func addMachineChecks(r *Report, m Machine, mode, worker string) {
 	gitStatus := StatusMissing
 	gitBlock := true
 	gitDetail := "Git is not available on PATH"
@@ -87,9 +87,21 @@ func addMachineChecks(r *Report, m Machine) {
 	}
 	r.add(Check{ID: "machine.cursor_editor", Name: "Cursor Editor", Scope: ScopeMachine, Status: edStatus, Blocking: false, Detail: edDetail})
 
+	requireAgent := RequireCursorAgent(mode, worker)
 	agStatus := StatusMissing
-	agBlock := true
+	agBlock := requireAgent
 	agDetail := "Cursor Agent CLI not found (cursor-agent or agent)"
+	if !requireAgent {
+		agStatus = StatusOptional
+		agBlock = false
+		agDetail = "not required for " + mode + " mode"
+		if worker == WorkerFake {
+			agDetail = "not required for fake worker"
+		}
+		if mode == ModeInteractive {
+			agDetail = "not required; interactive mode uses the current Cursor session"
+		}
+	}
 	if m.CursorAgent {
 		agStatus = StatusAvailable
 		agBlock = false
@@ -97,10 +109,16 @@ func addMachineChecks(r *Report, m Machine) {
 		if m.AgentFromEnv {
 			agDetail = "available (CURSOR_AGENT_BIN is set)"
 		}
-	} else if m.CursorEditor {
+	} else if requireAgent && m.CursorEditor {
 		agDetail = "missing; editor cursor is not the Agent CLI"
 	}
 	r.add(Check{ID: "machine.cursor_agent", Name: "Cursor Agent", Scope: ScopeMachine, Status: blockingStatus(agBlock, agStatus), Blocking: agBlock, Detail: agDetail})
+
+	r.add(Check{
+		ID: "execution.mode", Name: "Execution mode", Scope: ScopeMachine,
+		Status: StatusAvailable, Blocking: false,
+		Detail: mode + "; worker=" + workerMechanism(mode, worker),
+	})
 
 	ghStatus := StatusOptional
 	ghDetail := "not required for current phase"

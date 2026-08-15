@@ -39,6 +39,28 @@ func TestEnsureOwnedBranchCreateReuseConflict(t *testing.T) {
 	}
 }
 
+func TestDeleteBranchSafeAndRefusesCurrent(t *testing.T) {
+	root := initRepo(t)
+	c := vcs.Default()
+	ctx := context.Background()
+	sn, err := c.Inspect(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.DeleteBranch(ctx, root, sn.Branch); err == nil {
+		t.Fatal("must refuse deleting the current branch")
+	}
+	if err := c.EnsureBranch(ctx, root, "feature-tmp"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.EnsureBranch(ctx, root, sn.Branch); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.DeleteBranch(ctx, root, "feature-tmp"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestFeatureBranchNameDeterministic(t *testing.T) {
 	if vcs.FeatureBranchName("abc") != vcs.FeatureBranchName("abc") {
 		t.Fatal("not deterministic")

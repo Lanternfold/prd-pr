@@ -100,8 +100,12 @@ const (
 	RepoTypeLocal  = "local"
 	RepoTypeGitHub = "github"
 
+	PROpen            = "PR_OPEN"
+	PRChecking        = "PR_CHECKING"
 	PRWaitingForMerge = "PR_WAITING_FOR_MERGE"
-	MergeMerged       = "merged"
+	PRReadyToMerge    = "PR_READY_TO_MERGE"
+	PRMerged          = "PR_MERGED"
+	MergeMerged       = PRMerged
 	MergeBlocked      = "blocked"
 
 	GitHubActionBlocked = "GITHUB ACTION BLOCKED"
@@ -151,6 +155,8 @@ type Repository struct {
 	MergeMethod         string            `json:"merge_method,omitempty"`
 	MergeAt             string            `json:"merge_at,omitempty"`
 	MergeStatus         string            `json:"merge_status,omitempty"`
+	MergeBranch         string            `json:"merge_branch,omitempty"`
+	MergeRepository     string            `json:"merge_repository,omitempty"`
 	ChecksStatus        string            `json:"checks_status,omitempty"`
 	GitHubBlock         string            `json:"github_block,omitempty"`
 }

@@ -1,0 +1,9 @@
+{
+  "name": "prdpr",
+  "version": "0.1.0",
+  "description": "Thin Cursor UX for the PRD→PR Go engine. Invokes the existing prdpr CLI; does not orchestrate.",
+  "author": {
+    "name": "Lanternfold"
+  },
+  "keywords": ["prd", "prdpr", "orchestrator"]
+}

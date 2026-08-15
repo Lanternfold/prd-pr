@@ -176,9 +176,11 @@ Go
 Git
 GitHub
 GitHub Actions
-Cursor CLI
+Cursor (IDE + CLI)
 local filesystem
 configured LLM APIs where required
+
+The **core engine** is a local Go binary. It must remain usable without Cursor IDE (CLI/tests/fakes). The **primary user-facing interface** is a Cursor-native plugin that invokes that engine (see §46). Cursor CLI remains the coding **worker** transport. The plugin is not the worker.
 
 PRD→PR itself will live at:
 
@@ -800,6 +802,8 @@ Record the outcome for future learning.
 
 Cursor is the initial coding worker.
 
+The Cursor plugin (primary UX) is not the coding worker. The orchestrator invokes the worker with a task packet.
+
 The orchestrator creates a task packet containing:
 
 phase
@@ -1216,9 +1220,11 @@ duration
 human interventions
 lessons
 known limitations
-46. CLI
+46. CLI and Cursor Plugin
 
-Initial commands:
+The Go CLI (`prdpr`) is the core engine interface. It must remain independently executable and testable.
+
+Initial engine commands:
 
 prdpr init
 prdpr inspect PRD.md
@@ -1235,12 +1241,22 @@ prdpr knowledge
 prdpr learn
 prdpr doctor
 
-The primary workflow should eventually be:
+The CLI workflow remains:
 
 prdpr run PRD.md
+
+The **primary user-facing workflow** is a Cursor-native plugin that invokes the same engine:
+
+User → Cursor → PRD→PR Plugin (command + skill) → PRD→PR Go engine
+
+Plugin V0 is limited to: plugin manifest, one `/prdpr` command, one PRD→PR skill, and minimal documentation.
+
+The plugin must not implement orchestration (state, DAG, repair, retries, Git semantics, verification, knowledge, or model routing). Those belong to the Go engine.
+
+Do not require MCP, subagents, hooks, custom agents, SDK, cloud services, or extra commands for Plugin V0.
 47. Status Output
 
-The CLI should provide a concise live status.
+The CLI should provide a concise live status. The plugin should present the same orchestration state; it must not keep a second source of truth.
 
 Example:
 
@@ -1326,8 +1342,9 @@ V1 should run primarily on the user's Mac.
 Initial architecture:
 
 Mac
-├── PRD→PR
 ├── Cursor
+│     └── PRD→PR Plugin (primary UX; thin adapter)
+├── PRD→PR Go engine (CLI; independently executable)
 ├── Git
 └── local project
        │
@@ -1337,7 +1354,7 @@ Mac
        ▼
 GitHub Actions
 
-No cloud orchestrator is required for V1.
+The plugin invokes the engine. Cursor as coding worker is a separate adapter. No cloud orchestrator is required for V1. The engine must not require Cursor IDE.
 
 52. Initial Development Phases
 

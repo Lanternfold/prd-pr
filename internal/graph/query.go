@@ -124,6 +124,19 @@ func (g *Graph) kahn() []NodeID {
 	return order
 }
 
+// AllCompleted reports whether every phase node is COMPLETED.
+func (g *Graph) AllCompleted() bool {
+	if g == nil || len(g.Nodes) == 0 {
+		return false
+	}
+	for _, n := range g.Nodes {
+		if n.Status != StatusCompleted {
+			return false
+		}
+	}
+	return true
+}
+
 // Ready returns nodes whose dependencies have completed successfully.
 func (g *Graph) Ready() []NodeID {
 	if g == nil {

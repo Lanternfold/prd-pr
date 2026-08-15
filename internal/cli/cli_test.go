@@ -55,7 +55,7 @@ func TestDispatchHelp(t *testing.T) {
 		if !strings.Contains(out, "Usage:") {
 			t.Fatalf("%v: help missing Usage:\n%s", args, out)
 		}
-		for _, cmd := range []string{"version", "help", "doctor", "init", "inspect", "preflight", "run", "status"} {
+		for _, cmd := range []string{"version", "help", "doctor", "init", "inspect", "preflight", "prepare", "run", "verify", "review", "repair", "phase", "feedback", "resume", "status"} {
 			if !strings.Contains(out, cmd) {
 				t.Fatalf("%v: help missing command %q\n%s", args, cmd, out)
 			}

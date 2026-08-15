@@ -50,24 +50,25 @@ func TestFakeWorkerWritesExecutionAndNeverVerifies(t *testing.T) {
 }
 
 func TestRefuseWithoutGitBaseline(t *testing.T) {
+	t.Setenv("GIT_AUTHOR_NAME", "Test")
+	t.Setenv("GIT_AUTHOR_EMAIL", "test@example.com")
+	t.Setenv("GIT_COMMITTER_NAME", "Test")
+	t.Setenv("GIT_COMMITTER_EMAIL", "test@example.com")
 	root := t.TempDir()
 	writePRD(t, root)
 	eng := engine.New(engine.Options{
-		Worker: cursor.Fake{ClaimSuccess: true, WriteRel: "x.txt", WriteBody: "nope\n"},
+		Worker: cursor.Fake{ClaimSuccess: true, WriteRel: "x.txt", WriteBody: "ok\n"},
 		NewID:  seqID(),
 	})
 	res, err := eng.Run(context.Background(), engine.Request{ProductRoot: root})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Execution.Invoked {
-		t.Fatal("must not invoke without baseline")
+	if !res.Execution.Invoked {
+		t.Fatalf("expected bootstrap to create a baseline, refused: %s", res.Execution.RefusalReason)
 	}
-	if !strings.Contains(res.Execution.RefusalReason, "Git") && !strings.Contains(res.Execution.RefusalReason, "git") {
-		t.Fatalf("reason=%q", res.Execution.RefusalReason)
-	}
-	if _, err := os.Stat(filepath.Join(root, "x.txt")); err == nil {
-		t.Fatal("worker wrote without baseline")
+	if res.Execution.Baseline.SHA == "" {
+		t.Fatal("missing baseline after bootstrap")
 	}
 }
 

@@ -23,12 +23,20 @@ const (
 	VerdictSkipped = "SKIPPED"
 )
 
+// Check is one GitHub Actions required check on a pull request.
+type Check struct {
+	Name   string `json:"name"`
+	State  string `json:"state,omitempty"`
+	Bucket string `json:"bucket,omitempty"`
+}
+
 // Report is remote Actions status. Local tests remain the phase gate.
 type Report struct {
-	Available bool   `json:"available"`
-	Status    string `json:"status"`
-	Detail    string `json:"detail,omitempty"`
-	HeadSHA   string `json:"head_sha,omitempty"`
+	Available bool    `json:"available"`
+	Status    string  `json:"status"`
+	Detail    string  `json:"detail,omitempty"`
+	HeadSHA   string  `json:"head_sha,omitempty"`
+	Checks    []Check `json:"checks,omitempty"`
 }
 
 type GHFunc func(ctx context.Context, dir string, args ...string) (string, error)
@@ -147,35 +155,30 @@ func (w *Watcher) PRChecks(ctx context.Context, root, pr string) Report {
 	if err != nil {
 		return Report{Available: true, Status: StatusUnknown, Detail: err.Error()}
 	}
-	var checks []struct {
-		Name   string `json:"name"`
-		State  string `json:"state"`
-		Bucket string `json:"bucket"`
-	}
-	if err := json.Unmarshal([]byte(out), &checks); err != nil {
+	var raw []Check
+	if err := json.Unmarshal([]byte(out), &raw); err != nil {
 		return Report{Available: true, Status: StatusUnknown, Detail: "cannot parse pr checks"}
 	}
-	if len(checks) == 0 {
+	if len(raw) == 0 {
 		return Report{Available: true, Status: StatusUnknown, Detail: "no required checks"}
 	}
 	pending, failing, passing := 0, 0, 0
-	for _, c := range checks {
-		v := strings.ToUpper(c.Bucket)
-		if v == "" {
-			v = strings.ToUpper(c.State)
-		}
-		switch v {
-		case "PASS", "SUCCESS", "SKIP":
+	rep := Report{Available: true, Checks: raw}
+	for _, c := range raw {
+		switch classifyCheck(c) {
+		case VerdictPass:
 			passing++
-		case "FAIL", "FAILURE", "CANCELLED", "TIMED_OUT":
+		case VerdictFail:
 			failing++
-		case "PENDING", "QUEUED", "IN_PROGRESS":
+		case VerdictPending:
 			pending++
 		default:
-			return Report{Available: true, Status: StatusUnknown, Detail: c.Name + " " + v}
+			rep.Status = StatusUnknown
+			rep.Detail = c.Name + " " + checkToken(c)
+			return rep
 		}
 	}
-	rep := Report{Available: true, Detail: fmt.Sprintf("pass=%d fail=%d pending=%d", passing, failing, pending)}
+	rep.Detail = fmt.Sprintf("pass=%d fail=%d pending=%d", passing, failing, pending)
 	if failing > 0 {
 		rep.Status = StatusFailing
 		return rep
@@ -190,4 +193,58 @@ func (w *Watcher) PRChecks(ctx context.Context, root, pr string) Report {
 	}
 	rep.Status = StatusPassing
 	return rep
+}
+
+func checkToken(c Check) string {
+	v := strings.ToUpper(strings.TrimSpace(c.Bucket))
+	if v == "" {
+		v = strings.ToUpper(strings.TrimSpace(c.State))
+	}
+	return v
+}
+
+func classifyCheck(c Check) string {
+	switch checkToken(c) {
+	case "PASS", "SUCCESS", "SKIP":
+		return VerdictPass
+	case "FAIL", "FAILURE", "CANCELLED", "TIMED_OUT":
+		return VerdictFail
+	case "PENDING", "QUEUED", "IN_PROGRESS":
+		return VerdictPending
+	default:
+		return VerdictUnknown
+	}
+}
+
+// RequiredVerdict evaluates named required checks. A missing or UNKNOWN check never PASSes.
+func (r Report) RequiredVerdict(required []string) (verdict, reason string) {
+	if len(required) == 0 {
+		v := r.Verdict()
+		return v, "required CI checks are " + v
+	}
+	byName := map[string]Check{}
+	for _, c := range r.Checks {
+		byName[strings.ToLower(strings.TrimSpace(c.Name))] = c
+	}
+	pending := false
+	for _, name := range required {
+		name = strings.TrimSpace(name)
+		c, ok := byName[strings.ToLower(name)]
+		if !ok {
+			return VerdictUnknown, "required check missing: " + name
+		}
+		switch classifyCheck(c) {
+		case VerdictPass:
+		case VerdictFail:
+			return VerdictFail, "required check failed: " + name
+		case VerdictPending:
+			pending = true
+		default:
+			return VerdictUnknown, "required check UNKNOWN: " + name
+		}
+	}
+	if pending {
+		return VerdictPending, "required CI checks are " + VerdictPending
+	}
+	return VerdictPass, "required CI checks are " + VerdictPass
 }

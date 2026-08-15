@@ -119,7 +119,7 @@ func TestCleanAndDirtyGit(t *testing.T) {
 
 func TestCursorEditorOnly(t *testing.T) {
 	root := gitPRD(t, minimalPRD())
-	r := New(testEnv(t, "git", "cursor")).Run(context.Background(), Request{ProductRoot: root})
+	r := New(testEnv(t, "git", "cursor")).Run(context.Background(), Request{ProductRoot: root, Mode: ModeHeadless})
 	assertCheck(t, r, "machine.cursor_editor", StatusAvailable, false)
 	c := mustCheck(t, r, "machine.cursor_agent")
 	if c.Status != StatusBlocking || !c.Blocking {
@@ -132,13 +132,53 @@ func TestCursorEditorOnly(t *testing.T) {
 
 func TestCursorAgentAvailableAndMissing(t *testing.T) {
 	root := gitPRD(t, minimalPRD())
-	r := New(testEnv(t, "git", "cursor-agent")).Run(context.Background(), Request{ProductRoot: root})
+	r := New(testEnv(t, "git", "cursor-agent")).Run(context.Background(), Request{ProductRoot: root, Mode: ModeHeadless})
 	assertCheck(t, r, "machine.cursor_agent", StatusAvailable, false)
 
-	r = New(testEnv(t, "git")).Run(context.Background(), Request{ProductRoot: root})
+	r = New(testEnv(t, "git")).Run(context.Background(), Request{ProductRoot: root, Mode: ModeHeadless})
 	c := mustCheck(t, r, "machine.cursor_agent")
 	if !c.Blocking {
 		t.Fatalf("missing agent should block: %+v", c)
+	}
+}
+
+func TestInteractiveNoCursorAgentReady(t *testing.T) {
+	root := gitPRD(t, minimalPRD())
+	r := New(testEnv(t, "git")).Run(context.Background(), Request{ProductRoot: root, Mode: ModeInteractive})
+	if r.Status != OverallReady {
+		t.Fatalf("interactive without cursor-agent should be READY, status=%s blocking=%v", r.Status, r.Blocking)
+	}
+	c := mustCheck(t, r, "machine.cursor_agent")
+	if c.Blocking {
+		t.Fatalf("interactive agent must not block: %+v", c)
+	}
+	if r.ExecutionMode != ModeInteractive || r.WorkerMechanism != "current Cursor session" {
+		t.Fatalf("mode=%s worker=%s", r.ExecutionMode, r.WorkerMechanism)
+	}
+}
+
+func TestHeadlessNoCursorAgentBlocked(t *testing.T) {
+	root := gitPRD(t, minimalPRD())
+	r := New(testEnv(t, "git")).Run(context.Background(), Request{ProductRoot: root, Mode: ModeHeadless, Worker: WorkerCursor})
+	if r.Status != OverallBlocked {
+		t.Fatalf("headless without cursor-agent should be BLOCKED, status=%s", r.Status)
+	}
+}
+
+func TestHeadlessWithCursorAgentReady(t *testing.T) {
+	root := gitPRD(t, minimalPRD())
+	r := New(testEnv(t, "git", "cursor-agent")).Run(context.Background(), Request{ProductRoot: root, Mode: ModeHeadless})
+	if r.Status != OverallReady {
+		t.Fatalf("status=%s blocking=%v", r.Status, r.Blocking)
+	}
+	assertCheck(t, r, "machine.cursor_agent", StatusAvailable, false)
+}
+
+func TestHeadlessFakeWorkerNoCursorAgentReady(t *testing.T) {
+	root := gitPRD(t, minimalPRD())
+	r := New(testEnv(t, "git")).Run(context.Background(), Request{ProductRoot: root, Mode: ModeHeadless, Worker: WorkerFake})
+	if r.Status != OverallReady {
+		t.Fatalf("fake worker must not require cursor-agent: status=%s blocking=%v", r.Status, r.Blocking)
 	}
 }
 

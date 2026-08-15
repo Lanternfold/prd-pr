@@ -18,17 +18,17 @@ const (
 // and never mutates the repository. P4 Inspect/EstablishBaseline remain the
 // write-safety gate.
 type Observation struct {
-	Root           string
-	GitAvailable   bool
-	IsRepo         bool
-	Toplevel       string
-	ToplevelMatch  bool
-	Branch         string
-	HeadSHA        string
-	HasHEAD        bool
-	Dirty          bool
-	DirtyPaths     []string
-	State          string
+	Root          string
+	GitAvailable  bool
+	IsRepo        bool
+	Toplevel      string
+	ToplevelMatch bool
+	Branch        string
+	HeadSHA       string
+	HasHEAD       bool
+	Dirty         bool
+	DirtyPaths    []string
+	State         string
 }
 
 // Observe inspects Git without creating commits, resetting, or stashing.

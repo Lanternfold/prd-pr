@@ -25,6 +25,22 @@ func TestSingleNode(t *testing.T) {
 	}
 }
 
+func TestAllCompletedHasNoReadyPhase(t *testing.T) {
+	g := FromSpecs([]Spec{
+		{ID: "P1", Status: StatusCompleted},
+		{ID: "P2", Deps: []NodeID{"P1"}, Status: StatusCompleted},
+	})
+	if !g.AllCompleted() {
+		t.Fatal("expected all completed")
+	}
+	if len(g.Ready()) != 0 {
+		t.Fatalf("ready=%v", g.Ready())
+	}
+	if join(g.SequentialOrder()) != "P1,P2" {
+		t.Fatalf("DAG order must remain %v", g.SequentialOrder())
+	}
+}
+
 func TestLinearGraph(t *testing.T) {
 	g := FromSpecs([]Spec{
 		{ID: "P1", Name: "a"},

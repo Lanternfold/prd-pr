@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/lanternfold/prd-pr/internal/cost"
+	"github.com/lanternfold/prd-pr/internal/human"
 	"github.com/lanternfold/prd-pr/internal/state"
 )
 
@@ -73,8 +75,26 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "current_state: %s\n", emptyDash(st.CurrentState))
 	fmt.Fprintf(stdout, "current_commit: %s\n", emptyDash(st.CurrentCommit))
 	fmt.Fprintf(stdout, "last_known_good_commit: %s\n", emptyDash(st.LastKnownGoodCommit))
+	if st.Repository.Type != "" || st.Repository.PushStatus != "" {
+		fmt.Fprintf(stdout, "repo_type: %s\n", emptyDash(st.Repository.Type))
+		fmt.Fprintf(stdout, "repo_branch: %s\n", emptyDash(st.Repository.Branch))
+		fmt.Fprintf(stdout, "repo_push_status: %s\n", emptyDash(st.Repository.PushStatus))
+		fmt.Fprintf(stdout, "repo_github_status: %s\n", emptyDash(st.Repository.GitHubStatus))
+		if st.Repository.SkipReason != "" {
+			fmt.Fprintf(stdout, "repo_skip_reason: %s\n", st.Repository.SkipReason)
+		}
+	}
 	fmt.Fprintf(stdout, "created_at: %s\n", st.CreatedAt)
 	fmt.Fprintf(stdout, "updated_at: %s\n", st.UpdatedAt)
+	if st.CurrentState == state.StateWaitingForHuman {
+		if req, err := human.LoadRequest(root); err == nil {
+			fmt.Fprintf(stdout, "human_request_id: %s\n", req.ID)
+			fmt.Fprintf(stdout, "human_needed: %s\n", req.Needed)
+		}
+	}
+	if spent := cost.SpentUSD(root); spent > 0 {
+		fmt.Fprintf(stdout, "cost_usd: %.4f\n", spent)
+	}
 	return exitOK
 }
 

@@ -171,6 +171,7 @@ func runChecks(args []string, stdout, stderr io.Writer, rt Runtime) int {
 		return exitError
 	}
 	cfg := config.Defaults()
+	cfg.GitHubEnabled = true
 	rep := engine.New(engine.Options{Now: rt.Now, LookPath: rt.LookPath, Config: cfg}).InspectChecks(context.Background(), root)
 	fmt.Fprintf(stdout, "status: %s\n", rep.Status)
 	fmt.Fprintf(stdout, "verdict: %s\n", rep.Verdict())
@@ -187,6 +188,7 @@ func runMerge(args []string, stdout, stderr io.Writer, rt Runtime) int {
 		return exitError
 	}
 	cfg := config.Defaults()
+	cfg.GitHubEnabled = true
 	dec, res, err := engine.New(engine.Options{Now: rt.Now, LookPath: rt.LookPath, Config: cfg}).TryMerge(context.Background(), root)
 	if err != nil {
 		fmt.Fprintln(stderr, err.Error())

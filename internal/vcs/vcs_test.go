@@ -119,3 +119,34 @@ func run(t *testing.T, dir string, name string, args ...string) {
 		t.Fatalf("%s %v: %v\n%s", name, args, err, out)
 	}
 }
+
+func TestCreateBranchAndCommit(t *testing.T) {
+	root := initRepo(t)
+	c := vcs.Default()
+	if err := c.CreateBranch(context.Background(), root, "prdpr/p1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "hello.txt"), []byte("next\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	jail, err := fsguard.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sha, err := c.Commit(context.Background(), root, "update hello", []string{"hello.txt"}, jail)
+	if err != nil || sha == "" {
+		t.Fatalf("sha=%s err=%v", sha, err)
+	}
+}
+
+func TestCommitRefusesOutsidePath(t *testing.T) {
+	root := initRepo(t)
+	jail, err := fsguard.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = vcs.Default().Commit(context.Background(), root, "bad", []string{"../secret"}, jail)
+	if err == nil {
+		t.Fatal("expected refusal")
+	}
+}

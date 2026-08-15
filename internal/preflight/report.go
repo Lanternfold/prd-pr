@@ -59,6 +59,8 @@ type Report struct {
 	Blocking      []string         `json:"blocking_issues"`
 	Warnings      []string         `json:"warnings"`
 	NextAction    string           `json:"recommended_next_action"`
+	ExecutionMode    string `json:"execution_mode,omitempty"`
+	WorkerMechanism  string `json:"worker_mechanism,omitempty"`
 }
 
 func (r *Report) add(c Check) {
@@ -83,5 +85,5 @@ func (r *Report) finalize() {
 		return
 	}
 	r.Status = OverallReady
-	r.NextAction = "Environment is ready for PRD→PR execution. P4 still enforces Git baseline before Cursor writes."
+	r.NextAction = "Environment is ready for PRD→PR execution (" + r.ExecutionMode + "; " + r.WorkerMechanism + "). P4 still enforces Git baseline before Cursor writes."
 }
