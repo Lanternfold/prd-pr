@@ -8,13 +8,15 @@ description: >-
 
 # PRD→PR skill
 
-You are the Cursor-facing **control plane** for interactive PRD→PR. The Go `prdpr` binary is the engine and the source of truth.
+You are a **thin Cursor adapter** for interactive PRD→PR. The Go `prdpr` binary is the engine and the source of truth. You do not orchestrate.
 
-After `prdpr prepare`, **this current Cursor session** is the implementation actor. You implement the engine's task packet. You are not a second orchestrator.
+After `prdpr prepare`, **this current Cursor session** is the implementation actor. You implement the engine's task packet.
 
 After implementation, you **must** call `prdpr verify`. You do not verify. The engine verifies.
 
 If verify fails, you **must** call `prdpr review`. If the engine recommends repair, call `prdpr repair` and implement **only** that repair packet in this same session. Then verify again. Do not launch another Cursor.
+
+Repeating `prdpr prepare` after a VERIFIED phase is not plugin-owned sequencing. The engine selects the next READY phase.
 
 ## Rules
 
@@ -32,6 +34,7 @@ If verify fails, you **must** call `prdpr review`. If the engine recommends repa
 - do not invent requirements
 - do not spawn another Cursor
 - do not invoke `cursor-agent`
+- do not invoke `agent` as a coding worker
 - do not skip the packet
 - stay within the workspace / packet `product_root`
 - follow packet constraints and `forbidden_paths`
@@ -53,12 +56,29 @@ This plugin is not the P4 Cursor worker (`prdpr run --worker cursor`). Do not co
 
 ## Resolve the engine binary
 
-Use the first that works:
+Use `prdpr` on `PATH` only.
 
-1. `prdpr` on `PATH`
-2. `<workspace>/dist/prdpr` if that file is executable (this engine repo)
+```text
+command -v prdpr
+prdpr version
+```
 
-If neither exists, stop and tell the human to install or build `prdpr` and put it on `PATH`. Do not compile a second engine. Do not hardcode a machine-specific path.
+If `prdpr` is not on `PATH`, STOP. Tell the human:
+
+1. Install the released PRD→PR CLI. The current published release is **v0.1.1**.
+2. Put the `prdpr` binary on `PATH`.
+3. Confirm with `prdpr version` (expect `0.1.1` for that release).
+4. Retry `/prdpr`.
+
+Installation: https://github.com/lanternfold/prd-pr/blob/main/docs/USER_GUIDE.md#installation-and-setup
+
+Do **not**:
+
+- use `<workspace>/dist/prdpr`
+- search the filesystem for a PRD→PR checkout
+- clone or build the engine from source
+- run `go install` / `go build` to obtain the engine
+- hardcode a machine-specific path
 
 ## Invoke existing CLI only
 
@@ -78,15 +98,30 @@ prdpr resume [directory]
 prdpr status [directory]
 ```
 
-Always pass `--mode interactive` for plugin preflight. Headless `prdpr run` / `prdpr phase` require cursor-agent. Do not call those from this plugin.
+If the plugin needs an advisory preflight report, pass `--mode interactive`. Headless `prdpr run` / `prdpr phase` require cursor-agent. Do not call those from this plugin.
 
 `prdpr commit` and `prdpr pr` are refused until `prdpr verify` has set `verified_success=true`.
 
 ## `/prdpr` sequence
 
-0. `prdpr validate-prd <PRD>` (mandatory contract gate; PRD path only). If REJECTED: present the complete report, STOP, do not create a project, do not `init`, do not `prepare`, do not initialize Git/GitHub, do not implement. The Go engine is authoritative; do not reimplement validation.
-1. If VALID and this Cursor workspace is not yet the product: `prdpr <PRD>` (bootstrap + prepare). Use the printed `product_root`. If that path is not the current workspace, stop and ask the human to open it. Do not guess Studio paths.
-2. If the workspace is already the product: `prdpr inspect <PRD>` then `prdpr preflight --prd <PRD> <workspace>` then `prdpr prepare --prd <PRD> <workspace>` (omit `--phase`; the engine selects the next READY phase and refuses BLOCKED/COMPLETED)
+Distinguish **CLI-first** from **plugin-first**. Do not invent a third path.
+
+### Plugin-first (this session starts from a PRD)
+
+The workspace may be an Inbox/PRD location, not yet `product_root`.
+
+1. Optionally run `prdpr validate-prd <PRD>` (diagnostic only). If REJECTED: present the complete report, STOP, do not create a project, do not `init`, do not `prepare`, do not initialize Git/GitHub, do not implement.
+2. Run `prdpr <PRD>` (bootstrap + prepare). The engine contract-validates the PRD as part of this command. Use the printed `product_root`. If that path is not the current workspace, STOP and ask the human to open it, then run `/prdpr` again. Do not guess Studio paths.
+
+### Already a product workspace (CLI-first, or `/prdpr` after opening `product_root`)
+
+CLI-first means the human already ran `prdpr <PRD.md>` in a shell and then opened `product_root` in Cursor.
+
+1. Optionally `prdpr inspect` / `prdpr preflight --mode interactive --prd <PRD> <workspace>` for a human-readable report. They are **not** required. `prdpr prepare` already runs preflight internally and refuses when it is blocking.
+2. Run `prdpr prepare --prd <PRD> <workspace>` (omit `--phase`; the engine selects the next READY phase and refuses BLOCKED/COMPLETED).
+
+### After prepare succeeds (both workflows)
+
 3. If prepare/bootstrap is refused or `waiting_for_human`, stop and show the engine reason/question.
 4. Read the packet JSON at the `packet:` path from prepare (under the product root). That packet is the only implementation spec. Do not copy the entire PRD into the prompt.
 5. Implement **only** that packet in **this** Cursor session (normal file edits in the product workspace).
@@ -112,7 +147,7 @@ Do **not** start subagents, MCP, hooks, or the Agent SDK.
 ## After the engine returns
 
 - Present inspect / preflight / prepare / verify / review / repair / status results from the engine.
-- If `validate-prd` is REJECTED, stop and present the engine report.
+- If you ran `validate-prd` and it is REJECTED, stop and present the engine report.
 - If preflight or prepare is BLOCKING/refused, stop.
 - If the engine asks for a human, ask the human one precise question from the engine request.
 - Do not reimplement DAG, repair, model routing, or GitHub logic in this skill.

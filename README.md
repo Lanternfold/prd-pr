@@ -31,9 +31,11 @@ Default tests do not call paid LLM APIs or live Cursor.
 
 ## Install
 
-Requires [Go](https://go.dev/dl/) (version in `go.mod`) and Git.
+**Released binaries (normal users).** Current published release: **[v0.1.1](https://github.com/Lanternfold/prd-pr/releases/tag/v0.1.1)**. Download the artifact for your OS and architecture, verify it against `prdpr_0.1.1_checksums.txt`, install it as `prdpr` on your `PATH`, then run `prdpr version` (expect `0.1.1`) and `prdpr doctor`. Full steps: [docs/USER_GUIDE.md](docs/USER_GUIDE.md#installation-and-setup).
 
-**From source (current install path):**
+**From source (contributors / developers):**
+
+Requires [Go](https://go.dev/dl/) (version in `go.mod`) and Git.
 
 ```bash
 git clone https://github.com/lanternfold/prd-pr
@@ -41,11 +43,9 @@ cd prd-pr
 go install ./cmd/prdpr
 ```
 
-`go install` puts the `prdpr` binary in `$GOBIN` if set, otherwise `$GOPATH/bin`, which defaults to `$HOME/go/bin`. If the shell cannot find `prdpr`, add that directory to `PATH`. A checkout install (`go install ./cmd/prdpr`) reports version `dev`. A tagged module install (`go install github.com/lanternfold/prd-pr/cmd/prdpr@v0.1.0`) and GitHub Release binaries report `0.1.0`.
+`go install` puts the `prdpr` binary in `$GOBIN` if set, otherwise `$GOPATH/bin`, which defaults to `$HOME/go/bin`. If the shell cannot find `prdpr`, add that directory to `PATH`. A checkout install (`go install ./cmd/prdpr`) reports version `dev`. A tagged module install (`go install github.com/lanternfold/prd-pr/cmd/prdpr@v0.1.1`) and GitHub Release binaries report `0.1.1`.
 
-**Released binaries (normal users).** Once **v0.1.0** exists, download the GitHub Release artifact for your OS and architecture, verify it against the checksums file, and put `prdpr` on your `PATH`. That tag has not been published yet. Do not expect a release download URL until then.
-
-**Contributors / developers** can clone and build a local binary instead of installing:
+**Local contributor binary** (does not install to `PATH`):
 
 ```bash
 git clone https://github.com/lanternfold/prd-pr
@@ -55,11 +55,11 @@ go build -o dist/prdpr ./cmd/prdpr
 ./dist/prdpr doctor
 ```
 
-See [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md).
+See [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md). The Cursor plugin does **not** use `dist/prdpr`; it requires `prdpr` on `PATH`.
 
 ## Quick start
 
-1. Install so `prdpr` is on your `PATH` (see above).
+1. Install so `prdpr` is on your `PATH` (released **v0.1.1** for normal users; see above).
 2. Check the environment:
 
 ```bash
@@ -83,7 +83,7 @@ Optional explicit validation (no project mutation; useful when authoring or debu
 prdpr validate-prd path/to/PRD.md
 ```
 
-Interactive Cursor: install the thin plugin in [prdpr-cursor/](prdpr-cursor/README.md) and run `/prdpr`. Headless: `prdpr phase` (uses `cursor-agent`). Do not mix those paths in one session.
+Interactive Cursor: install released `prdpr` on `PATH`, load the thin plugin in [prdpr-cursor/](prdpr-cursor/README.md), then run `/prdpr`. That is the **plugin-first** path. **CLI-first** is `prdpr path/to/PRD.md` in a shell, then open `product_root` and implement the packet (or `/prdpr` there). Headless: `prdpr phase` (uses `cursor-agent`). Do not mix interactive and headless paths in one session. `validate-prd` is optional.
 
 Full walkthrough: [docs/USER_GUIDE.md](docs/USER_GUIDE.md).
 

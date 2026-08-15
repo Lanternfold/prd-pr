@@ -44,7 +44,7 @@ Same as `prdpr bootstrap`.
 
 ## `prdpr version`
 
-**What it does:** Prints the binary version. Checkout builds (`go build`, `go install ./cmd/prdpr`) print `dev`. A tagged module install (`go install github.com/lanternfold/prd-pr/cmd/prdpr@v0.1.0`) prints `0.1.0` from Go module build info. GitHub Release binaries inject the tag version via `-X github.com/lanternfold/prd-pr/internal/cli.Version=<version>`. `prdpr --version` is the same command.
+**What it does:** Prints the binary version. Checkout builds (`go build`, `go install ./cmd/prdpr`) print `dev`. A tagged module install (`go install github.com/lanternfold/prd-pr/cmd/prdpr@v0.1.1`) prints `0.1.1` from Go module build info. GitHub Release binaries inject the tag version via `-X github.com/lanternfold/prd-pr/internal/cli.Version=<version>`. `prdpr --version` is the same command.
 
 **When to use it:** Support / install checks.
 
@@ -74,9 +74,9 @@ Same as `prdpr bootstrap`.
 
 **What it does:** Deterministic PRD contract gate. PRD path only. No project mutation.
 
-**When to use it:** Before bootstrap, and after any PRD edit. The plugin Step 0 must call this.
+**When to use it:** Optional diagnostic before bootstrap, and after any PRD edit. Not required: `prdpr <PRD.md>` and `prdpr prepare` already run the same contract gate. The Cursor plugin may call this; it must not treat it as a mandatory extra step.
 
-**What happens next:** VALID → bootstrap/prepare may run. REJECTED → human edits the PRD; validate again.
+**What happens next:** VALID → bootstrap/prepare may run. REJECTED → human edits the PRD; validate again (or retry `prdpr <PRD.md>`).
 
 **Related architecture:** [PRD_AUTHORING_CONTRACT.md](PRD_AUTHORING_CONTRACT.md), [LLM_AND_HUMAN.md](LLM_AND_HUMAN.md)
 
@@ -88,7 +88,7 @@ Same as `prdpr bootstrap`.
 
 **What it does:** Parses the PRD; reports sections, IDs, diagnostics. `--graph` prints the DAG from explicit phase dependencies.
 
-**When to use it:** Authoring and debugging a PRD without creating a project.
+**When to use it:** Optional diagnostic. Authoring and debugging a PRD without creating a project. Not required on the `/prdpr` path.
 
 **What happens next:** Fix parse errors before `validate-prd` / bootstrap.
 
@@ -130,7 +130,7 @@ Same as `prdpr bootstrap`.
 
 **What it does:** Advisory readiness report (OS, git, Cursor, dirty tree, tools). Does not replace P4 fail-closed checks before a worker.
 
-**When to use it:** Before a run, or from the plugin with `--mode interactive`.
+**When to use it:** Optional advisory report before a run, or from the plugin with `--mode interactive`. Not required: `prdpr prepare` already runs preflight internally and refuses when it is blocking.
 
 **What happens next:** Blocking items must be fixed. Headless worker still enforces Git baseline separately.
 
@@ -142,11 +142,11 @@ Same as `prdpr bootstrap`.
 
 ## `prdpr prepare [--prd FILE] [--phase ID] [--self-development] [directory]`
 
-**What it does:** Builds a deterministic task packet and Git baseline. Selects the first READY phase when `--phase` is omitted. Refuses BLOCKED, COMPLETED, unknown, and WAITING phases. Marks the selected node RUNNING. Does not invoke Cursor.
+**What it does:** Builds a deterministic task packet and Git baseline. Selects the first READY phase when `--phase` is omitted. Runs preflight internally (interactive mode does not require `cursor-agent`) and refuses when preflight is blocking. Refuses BLOCKED, COMPLETED, unknown, and WAITING phases. Marks the selected node RUNNING. Does not invoke Cursor.
 
 Ordinary execution against the PRD→PR orchestrator repository is refused. `--self-development` opts into a dedicated `SELF_DEVELOPMENT` path. The engine does not infer that mode from the working directory, `.project`, or a PRD title. The PRD must also contain `Execution mode: SELF_DEVELOPMENT`, and the target must be the orchestrator module `github.com/lanternfold/prd-pr`.
 
-**When to use it:** Interactive path after bootstrap; plugin after a verified phase to get the next READY packet. Use `--self-development` only when deliberately modifying `prd-pr` itself.
+**When to use it:** Interactive path after bootstrap; plugin after a verified phase to get the next READY packet. CLI-first users run this in `product_root` after `prdpr <PRD.md>` if they still need a packet. A separate `inspect`/`preflight` CLI call is not required. Use `--self-development` only when deliberately modifying `prd-pr` itself.
 
 **What happens next:** Implement the packet in the current Cursor session, then `verify`. Headless users usually call `run`/`phase` instead. Self-development cannot report success until `prdpr verify` passes.
 

@@ -47,7 +47,7 @@ Four layers stay distinct:
 3. **Cursor Plugin Interface** — Cursor-facing entry point. Invokes the engine, passes workspace/project context, presents state/results, guides Cursor through the workflow. Does **not** own orchestration logic.
 4. **Worker Adapters** — implementation execution (P4 Cursor worker: task packet + subprocess). The plugin is **not** the worker. Do not collapse plugin and worker into one abstraction (ADR-004).
 
-The plugin must **not** duplicate: orchestration state, DAG, repair, retry counts, Git semantics, verification, knowledge storage, model routing, or PRD contract validation. Step 0 of `/prdpr` is `prdpr validate-prd`; REJECTED stops before project creation. After VALID, `prdpr <PRD.md>` bootstraps Studio placement and prepare. The plugin must not call `prdpr run`.
+The plugin must **not** duplicate: orchestration state, DAG, repair, retry counts, Git semantics, verification, knowledge storage, model routing, or PRD contract validation. `/prdpr` invokes the existing CLI. `prdpr validate-prd` is optional; `prdpr <PRD.md>` and `prdpr prepare` already run the contract gate. The plugin must not call `prdpr run` or `prdpr phase`. Runtime requirement is `prdpr` on `PATH` (no engine-checkout / `dist/prdpr` fallback).
 
 **Plugin V0 (interface milestone, not a new PRD phase):** plugin manifest, one `/prdpr` command, one PRD→PR skill, minimal documentation. No MCP, subagents, hooks, custom agents, SDK, cloud services, databases, or extra commands unless strictly necessary.
 
@@ -59,7 +59,7 @@ This does not redesign P4.
 
 ## Consequences
 
-Day-to-day UX lives in Cursor; correctness still lives in Go. Two surfaces (plugin + CLI) must stay thin over the same engine or they will drift. Plugin V0 is small; richer Cursor features stay optional. The engine can still fake-worker test without Cursor. Coding still depends on the Cursor worker adapter when real implementation runs (ADR-004).
+Day-to-day UX lives in Cursor; correctness still lives in Go. Two surfaces (plugin + CLI) must stay thin over the same engine or they will drift. Plugin V0 is small; richer Cursor features stay optional. The engine can still fake-worker test without Cursor. Interactive coding uses the **current Cursor IDE session** as the implementation actor. The P4 `cursor-agent` worker remains the **headless** path (`prdpr run` / `prdpr phase`) and must not be invoked from the plugin (ADR-004).
 
 ADR-001 still holds: one local Go binary is the engine, not a second orchestrator. A Cursor plugin is an interface, not a daemon or SaaS.
 
