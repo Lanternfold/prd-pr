@@ -27,12 +27,19 @@ The human is an **exception handler**: unresolved product decisions, missing cre
 
 ## Quick start
 
-The primary input is a PRD. After `prdpr` is on your `PATH`:
+**v0.1.0 is not published yet.** Until a GitHub Release exists, install from a clone. Released binaries will become the normal-user installation path once v0.1.0 exists.
+
+The primary input is a PRD:
 
 ```bash
+git clone https://github.com/lanternfold/prd-pr
+cd prd-pr
+go install ./cmd/prdpr
 prdpr doctor
 prdpr path/to/PRD.md
 ```
+
+`go install` writes `prdpr` to `$GOBIN` if set, otherwise `$GOPATH/bin` (default `$HOME/go/bin`). Add that directory to `PATH` if the shell cannot find `prdpr`.
 
 `prdpr <PRD.md>` and `prdpr bootstrap <PRD.md>` are the same PRD-only entry. The engine validates the PRD as part of that command. Do not start by creating a product directory by hand.
 
@@ -44,6 +51,14 @@ prdpr validate-prd path/to/PRD.md
 
 ## Installation and setup
 
+### Released binary (normal users)
+
+The first versioned release will be **v0.1.0**. It is not published yet.
+
+After a GitHub Release exists, download the `prdpr` artifact that matches your OS and architecture, verify it against the release checksums file, and put the binary on your `PATH`. Then run `prdpr version` and `prdpr doctor`.
+
+Until that release exists, use the clone + `go install ./cmd/prdpr` path in Quick Start.
+
 ### Install from source
 
 Requires Go (version in `go.mod`) and Git. From a clone of this repository:
@@ -52,9 +67,7 @@ Requires Go (version in `go.mod`) and Git. From a clone of this repository:
 go install ./cmd/prdpr
 ```
 
-`go install` writes `prdpr` to `$GOBIN` if set, otherwise `$GOPATH/bin` (default `$HOME/go/bin`). Add that directory to `PATH` if the shell cannot find `prdpr`.
-
-GitHub Release binaries are the planned V0 distribution path. They are not published yet.
+`go install` writes `prdpr` to `$GOBIN` if set, otherwise `$GOPATH/bin` (default `$HOME/go/bin`). Add that directory to `PATH` if the shell cannot find `prdpr`. The binary reports `dev` unless you pass `-ldflags`.
 
 ### Contributor / developer build
 
@@ -82,7 +95,7 @@ Reports OS, architecture, Go, Git, Cursor editor, Cursor Agent, and GitHub CLI. 
 
 | Requirement | Status |
 |---|---|
-| Go (version in `go.mod`) | Required to install or build from source |
+| Go (version in `go.mod`) | Required to install or build from source; not required to run a released binary |
 | Git | Required |
 | A PRD (contract-validated during `prdpr <PRD.md>`) | Required |
 | Studio layout (`Tools/`, `Products/`, …) or `PRDPR_STUDIO` | Required for PRD-only bootstrap |

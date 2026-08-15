@@ -12,6 +12,8 @@ cd prd-pr
 go test ./...
 go build -o dist/prdpr ./cmd/prdpr
 ./dist/prdpr doctor
+# source/developer install (reports version "dev"):
+# go install ./cmd/prdpr
 ```
 
 Prerequisites: Go version from `go.mod`, Git. Cursor IDE for plugin work. `gh` only for GitHub-facing changes. `cursor-agent` only for live P4 tests.
@@ -152,9 +154,53 @@ Do not put scheduling or verification into the plugin.
 
 ## J. Building and releasing
 
-**IMPLEMENTED:** `go build ./cmd/prdpr`, `go test ./...`, `.github/workflows/ci.yml` (test, vet, build). Version via `-ldflags` on `internal/cli.Version`.
+**Development CI** (`.github/workflows/ci.yml`) stays responsible for `go test ./...`, `go vet ./...`, and `go build ./...` on push/PR. The required job name is `test`. Do not change that job to publish releases.
 
-**PLANNED:** tagged GitHub Releases, homebrew, plugin Marketplace, config file loader.
+**Local contributor build:**
+
+```bash
+go test ./...
+go build -o dist/prdpr ./cmd/prdpr
+```
+
+`go install ./cmd/prdpr` is a source/developer install into Go’s bin directory. Development binaries report `prdpr version` as `dev` unless you set `-ldflags`.
+
+**Release builds** inject the version at link time:
+
+```bash
+go build -ldflags "-X github.com/lanternfold/prd-pr/internal/cli.Version=0.1.0" ./cmd/prdpr
+```
+
+The same injection is used by `scripts/build-release.sh`. Artifact names:
+
+- `prdpr_<version>_darwin_arm64`
+- `prdpr_<version>_darwin_amd64`
+- `prdpr_<version>_linux_arm64`
+- `prdpr_<version>_linux_amd64`
+- `prdpr_<version>_checksums.txt`
+
+Example for v0.1.0: `prdpr_0.1.0_darwin_arm64`.
+
+**GitHub Releases** are published by `.github/workflows/release.yml` when a version tag matching `v*` is pushed (validated as `vMAJOR.MINOR.PATCH`). The workflow builds those four binaries, writes checksums, and creates a GitHub Release. It uses the default `GITHUB_TOKEN` (`contents: write`). No extra secrets.
+
+The first release version is **v0.1.0**. Do not create or push that tag until the release workflow is reviewed and merged to the default branch. After that:
+
+1. Release only a commit whose `ci` / `test` job is already green.
+2. `git tag v0.1.0 <commit>`
+3. `git push origin v0.1.0`
+
+Do not document a specific release download URL until that tag exists.
+
+Local check of the release build (does not publish):
+
+```bash
+./scripts/build-release.sh 0.1.0
+./dist/release/prdpr_0.1.0_$(go env GOOS)_$(go env GOARCH) version
+```
+
+**IMPLEMENTED:** tagged GitHub Releases (`.github/workflows/release.yml` on `v*` tags).
+
+**PLANNED:** Homebrew, plugin Marketplace, config file loader.
 
 ## K. Open-source user lifecycle
 
