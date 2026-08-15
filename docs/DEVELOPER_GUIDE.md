@@ -198,6 +198,8 @@ Local check of the release build (does not publish):
 ./dist/release/prdpr_0.1.0_$(go env GOOS)_$(go env GOARCH) version
 ```
 
+**IMPLEMENTED:** tagged GitHub Releases (`.github/workflows/release.yml` on `v*` tags).
+
 **PLANNED:** Homebrew, plugin Marketplace, config file loader.
 
 ## K. Open-source user lifecycle
