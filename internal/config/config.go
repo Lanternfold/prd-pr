@@ -49,6 +49,11 @@ type Config struct {
 	DeleteBranchAfterMerge bool          `json:"delete_branch_after_merge"`
 	CheapModel             string        `json:"cheap_model"`
 	StrongModel            string        `json:"strong_model"`
+	StudioRoot             string        `json:"studio_root,omitempty"`
+	RulesetsEnabled        bool          `json:"rulesets_enabled"`
+	RequiredApprovals      int           `json:"required_approvals,omitempty"`
+	AllowForcePush         bool          `json:"allow_force_push"`
+	AllowBranchDeletion    bool          `json:"allow_branch_deletion"`
 }
 
 // Defaults returns V1 local-first configuration.
@@ -72,6 +77,7 @@ func Defaults() Config {
 		DeleteBranchAfterMerge: false,
 		CheapModel:             "cheap",
 		StrongModel:            "strong",
+		RulesetsEnabled:        true,
 	}
 }
 

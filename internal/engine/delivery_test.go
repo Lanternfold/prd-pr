@@ -68,6 +68,14 @@ func TestEvaluateMergeGates(t *testing.T) {
 	if d := engine.EvaluateMerge(need, st, ex, pr, okreq, nil); !d.Allow || d.Status != state.PRReadyToMerge {
 		t.Fatalf("required pass %+v", d)
 	}
+	if d := engine.EvaluateMerge(cfg, st, ex, pr, ci.Report{Status: ci.StatusSkipped}, nil); d.Allow {
+		t.Fatalf("skipped ci %+v", d)
+	}
+	rb := cfg
+	rb.MergeMethod = config.MergeRebase
+	if d := engine.EvaluateMerge(rb, st, ex, pr, pass, nil); d.Allow || !strings.Contains(d.Reason, "rebase") {
+		t.Fatalf("rebase %+v", d)
+	}
 }
 
 func TestBranchCreatedForGitHubPRWorkflow(t *testing.T) {
@@ -75,7 +83,7 @@ func TestBranchCreatedForGitHubPRWorkflow(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.GitHubEnabled = true
 	cfg.AutoCommit = false
-	eng := engine.New(engine.Options{Worker: panicWorker{}, NewID: seqID(), AllowSelf: true, Config: cfg})
+	eng := engine.New(engine.Options{Worker: panicWorker{}, NewID: seqID(), AllowSelf: true, SkipWait: true, Config: cfg})
 	res, err := eng.Prepare(context.Background(), engine.Request{ProductRoot: root, PhaseID: "P1"})
 	if err != nil || res.Execution.RefusalReason != "" {
 		t.Fatalf("%v %+v", err, res.Execution)
@@ -91,7 +99,7 @@ func TestLocalOnlySkipsPRAndMerge(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.GitHubEnabled = false
 	cfg.AutoCommit = false
-	eng := engine.New(engine.Options{Worker: panicWorker{}, NewID: seqID(), AllowSelf: true, Config: cfg})
+	eng := engine.New(engine.Options{Worker: panicWorker{}, NewID: seqID(), AllowSelf: true, SkipWait: true, Config: cfg})
 	if _, err := eng.Prepare(context.Background(), engine.Request{ProductRoot: root, PhaseID: "P1"}); err != nil {
 		t.Fatal(err)
 	}
@@ -121,6 +129,7 @@ func TestGitHubUnavailableBlocksPR(t *testing.T) {
 		Worker:    panicWorker{},
 		NewID:     seqID(),
 		AllowSelf: true,
+		SkipWait:  true,
 		Config:    cfg,
 		GH:        &vcs.GHClient{LookPath: func(string) (string, error) { return "", os.ErrNotExist }},
 	})
@@ -153,6 +162,7 @@ func TestAutoMergeSuccessAndCleanup(t *testing.T) {
 		Worker:    cursor.Fake{ClaimSuccess: true, WriteRel: "extra.txt", WriteBody: "ok\n"},
 		NewID:     seqID(),
 		AllowSelf: true,
+		SkipWait:  true,
 		Config:    cfg,
 		Git: &vcs.Client{
 			LookPath: exec.LookPath,
@@ -225,6 +235,7 @@ func TestDuplicatePRIsReused(t *testing.T) {
 		Worker:    panicWorker{},
 		NewID:     seqID(),
 		AllowSelf: true,
+		SkipWait:  true,
 		Config:    cfg,
 		GH: &vcs.GHClient{
 			LookPath: func(string) (string, error) { return "/bin/gh", nil },
@@ -269,6 +280,7 @@ func TestInspectChecksPersistsPendingAndUnknown(t *testing.T) {
 		Worker:    panicWorker{},
 		NewID:     seqID(),
 		AllowSelf: true,
+		SkipWait:  true,
 		Config:    cfg,
 		GH:        &vcs.GHClient{LookPath: func(string) (string, error) { return "", os.ErrNotExist }},
 		CI: &ci.Watcher{
@@ -310,6 +322,7 @@ func TestReconcileMergeAndPRWithoutRepeating(t *testing.T) {
 		Worker:    panicWorker{},
 		NewID:     seqID(),
 		AllowSelf: true,
+		SkipWait:  true,
 		Config:    cfg,
 		GH: &vcs.GHClient{
 			LookPath: func(string) (string, error) { return "/bin/gh", nil },
@@ -388,6 +401,7 @@ func TestAutoMergeDisabledDoesNotMerge(t *testing.T) {
 		Worker:    panicWorker{},
 		NewID:     seqID(),
 		AllowSelf: true,
+		SkipWait:  true,
 		Config:    cfg,
 		GH: &vcs.GHClient{
 			LookPath: func(string) (string, error) { return "/bin/gh", nil },
@@ -429,6 +443,42 @@ func TestAutoMergeDisabledDoesNotMerge(t *testing.T) {
 	}
 	if dec.Allow || merged || dec.Status != state.PRWaitingForMerge {
 		t.Fatalf("%+v merged=%t", dec, merged)
+	}
+}
+
+func TestProductWorkDoesNotPushBaseBranch(t *testing.T) {
+	root := goGitFixture(t, true)
+	run(t, root, "git", "remote", "add", "origin", initBare(t))
+	cfg := config.Defaults()
+	cfg.GitHubEnabled = true
+	cfg.AutoCommit = false
+	eng := engine.New(engine.Options{
+		Worker:    panicWorker{},
+		NewID:     seqID(),
+		AllowSelf: true,
+		SkipWait:  true,
+		Config:    cfg,
+		GH:        &vcs.GHClient{LookPath: func(string) (string, error) { return "", os.ErrNotExist }},
+	})
+	if _, err := eng.Prepare(context.Background(), engine.Request{ProductRoot: root, PhaseID: "P1"}); err != nil {
+		t.Fatal(err)
+	}
+	if v, err := eng.Verify(context.Background(), engine.Request{ProductRoot: root}); err != nil || !v.VerifiedSuccess {
+		t.Fatal(err)
+	}
+	st := loadState(t, root)
+	st.CurrentState = state.StateCompleted
+	st.Repository.FeatureBranch = "main"
+	st.Repository.BaseBranch = "main"
+	st.Repository.Branch = "main"
+	st.Repository.PushStatus = state.PushPending
+	store, _ := state.Open(root)
+	_ = store.Save(st)
+	if err := eng.Reconcile(context.Background(), root); err != nil {
+		t.Fatal(err)
+	}
+	if loadState(t, root).Repository.PushStatus != state.PushFailed {
+		t.Fatalf("%+v", loadState(t, root).Repository)
 	}
 }
 

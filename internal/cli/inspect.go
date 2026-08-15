@@ -24,6 +24,7 @@ func runInspect(args []string, stdout, stderr io.Writer) int {
 			showGraph = true
 		case "-h", "--help":
 			fmt.Fprintln(stdout, "Usage: prdpr inspect [--json] [--graph] <PRD.md>")
+			fmt.Fprintln(stdout, docsHint("inspect"))
 			return exitOK
 		default:
 			if strings.HasPrefix(a, "-") {

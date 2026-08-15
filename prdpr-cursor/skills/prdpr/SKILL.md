@@ -39,7 +39,7 @@ If verify fails, you **must** call `prdpr review`. If the engine recommends repa
 
 ## Do not implement engine logic in this session
 
-Parsing, DAG construction, preflight logic, planning, Git logic, verification, repair policy, retry limits, knowledge, model routing, and cost tracking belong to the engine. Do not reimplement them in chat.
+Parsing, DAG construction, PRD contract validation, preflight logic, planning, Git logic, verification, repair policy, retry limits, knowledge, model routing, and cost tracking belong to the engine. Do not reimplement them in chat.
 
 Do **not** add a second verification implementation in this skill. Do not grade tests yourself. Do not invent pass/fail from chat.
 
@@ -63,12 +63,16 @@ If neither exists, stop and tell the human to install or build `prdpr` and put i
 ## Invoke existing CLI only
 
 ```text
+prdpr validate-prd [--json] <PRD.md>
+prdpr <PRD.md>
+prdpr bootstrap <PRD.md>
 prdpr inspect [--json] [--graph] <PRD.md>
 prdpr preflight [--json] [--prd FILE] [--mode interactive|headless] [directory]
 prdpr prepare [--prd FILE] [--phase ID] [directory]
 prdpr verify [--json] [directory]
 prdpr review [--json] [directory]
 prdpr repair [--json] [directory]
+prdpr runtime [directory]
 prdpr feedback [--request ID] [--text TEXT] [--status STATUS] [--credential NAME] [directory]
 prdpr resume [directory]
 prdpr status [directory]
@@ -80,18 +84,19 @@ Always pass `--mode interactive` for plugin preflight. Headless `prdpr run` / `p
 
 ## `/prdpr` sequence
 
-1. `prdpr inspect <PRD>`
-2. `prdpr preflight --prd <PRD> <workspace>`
-3. `prdpr prepare --prd <PRD> [--phase ID] <workspace>`
-4. If prepare is refused, stop and show the engine reason.
-5. Read the packet JSON at the `packet:` path from prepare (under the workspace). That packet is the only implementation spec. Do not copy the entire PRD into the prompt.
-6. Implement **only** that packet in **this** Cursor session (normal file edits in the workspace).
-7. Run `prdpr verify [--json] <workspace>`.
-8. If verification is `VERIFIED`, report it. Then `prdpr status`. If the engine completed the phase, stop or prepare the next ready phase when the user asked to continue.
+0. `prdpr validate-prd <PRD>` (mandatory contract gate; PRD path only). If REJECTED: present the complete report, STOP, do not create a project, do not `init`, do not `prepare`, do not initialize Git/GitHub, do not implement. The Go engine is authoritative; do not reimplement validation.
+1. If VALID and this Cursor workspace is not yet the product: `prdpr <PRD>` (bootstrap + prepare). Use the printed `product_root`. If that path is not the current workspace, stop and ask the human to open it. Do not guess Studio paths.
+2. If the workspace is already the product: `prdpr inspect <PRD>` then `prdpr preflight --prd <PRD> <workspace>` then `prdpr prepare --prd <PRD> <workspace>` (omit `--phase`; the engine selects the next READY phase and refuses BLOCKED/COMPLETED)
+3. If prepare/bootstrap is refused or `waiting_for_human`, stop and show the engine reason/question.
+4. Read the packet JSON at the `packet:` path from prepare (under the product root). That packet is the only implementation spec. Do not copy the entire PRD into the prompt.
+5. Implement **only** that packet in **this** Cursor session (normal file edits in the product workspace).
+6. Run `prdpr verify [--json] <product_root>`.
+7. If verification is `VERIFIED`, report it. Then `prdpr status`. If the engine completed the project, run `prdpr runtime <product_root>` and present any URL. If runtime fails, implement the engine's runtime repair packet here, then `prdpr runtime` again, bounded by the engine.
+8. If the engine completed the phase but not the project, call `prdpr prepare` **without** `--phase` in this same session. The engine selects the next READY phase. Read the new packet and implement it here, then `prdpr verify` again. Repeat until the engine reports project completed, `waiting_for_human`, or a prepare refusal (including a non-READY phase). Do not pick the next phase yourself. Do not call `prdpr phase`.
 9. If verification is not `VERIFIED`:
-   1. Run `prdpr review [--json] <workspace>`.
+   1. Run `prdpr review [--json] <product_root>`.
    2. If `recommend_human` and not `recommend_repair`, surface the engine human request (one question). Do not invent extra prompts.
-   3. If `recommend_repair`, run `prdpr repair [--json] <workspace>`, read the repair packet, implement **only** that bounded repair in this session, then `prdpr verify` again.
+   3. If `recommend_repair`, run `prdpr repair [--json] <product_root>`, read the repair packet, implement **only** that bounded repair in this session, then `prdpr verify` again.
    4. Repeat review/repair only as the engine allows. After the engine reports repair exhausted / `WAITING_FOR_HUMAN`, stop.
 
 If the engine reports `MANUAL_VERIFICATION_REQUIRED`, say so explicitly. Do not pretend those criteria passed.
@@ -107,6 +112,7 @@ Do **not** start subagents, MCP, hooks, or the Agent SDK.
 ## After the engine returns
 
 - Present inspect / preflight / prepare / verify / review / repair / status results from the engine.
+- If `validate-prd` is REJECTED, stop and present the engine report.
 - If preflight or prepare is BLOCKING/refused, stop.
 - If the engine asks for a human, ask the human one precise question from the engine request.
 - Do not reimplement DAG, repair, model routing, or GitHub logic in this skill.

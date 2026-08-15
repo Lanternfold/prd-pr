@@ -170,7 +170,8 @@ func TestPrepareInvalidGraph(t *testing.T) {
 	if res.Execution.Invoked || res.Packet.TaskID != "" {
 		t.Fatalf("%+v", res)
 	}
-	if !strings.Contains(strings.ToLower(res.Execution.RefusalReason), "graph") {
+	if !strings.Contains(strings.ToLower(res.Execution.RefusalReason), "graph") &&
+		!strings.Contains(strings.ToLower(res.Execution.RefusalReason), "contract") {
 		t.Fatalf("reason=%q", res.Execution.RefusalReason)
 	}
 }

@@ -8,7 +8,7 @@ import (
 )
 
 func TestStringMasksSecrets(t *testing.T) {
-	in := "CURSOR_API_KEY=cursor_secretvalue Authorization: Bearer abcdefghijklmnop token=supersecret ghp_abcdefghijklmnopqrstuvwxyz1234"
+	in := "CURSOR_API_KEY=cursor_secretvalue Authorization: Bearer abcdefghijklmnop token=supersecret ghp_abcdefghijklmnopqrstuvwxyz1234 gho_abcdefghijklmnopqrstuvwxyz1234"
 	out := redact.String(in)
 	for _, leak := range []string{"cursor_secretvalue", "abcdefghijklmnop", "supersecret", "abcdefghijklmnopqrstuvwxyz1234"} {
 		if strings.Contains(out, leak) {

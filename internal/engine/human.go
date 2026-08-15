@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/lanternfold/prd-pr/internal/graph"
 	"github.com/lanternfold/prd-pr/internal/human"
 	"github.com/lanternfold/prd-pr/internal/notify"
 	"github.com/lanternfold/prd-pr/internal/redact"
@@ -46,6 +47,10 @@ func (e *Engine) requestHumanLocked(g *state.Guard, st state.State, root string,
 		return req, err
 	}
 	st.CurrentState = state.StateWaitingForHuman
+	if gr := loadGraph(root); gr != nil {
+		markPhase(gr, st.CurrentPhaseID, graph.StatusWaitingForHuman)
+		persistGraph(g, gr)
+	}
 	_ = g.AppendEvent(state.Event{
 		Kind:    state.KindIntent,
 		Name:    state.EventHumanRequested,
@@ -77,7 +82,6 @@ func (e *Engine) requestHumanLocked(g *state.Guard, st state.State, root string,
 		Payload: state.Payload(map[string]any{"id": req.ID, "optional": req.Optional}),
 	})
 	if req.Optional {
-		st.CurrentState = state.StateVerified
 		_ = g.Save(st)
 	}
 	return req, nil
@@ -165,7 +169,17 @@ func (e *Engine) Resume(ctx context.Context, root string) error {
 		}),
 	})
 	confirmed := human.ManualConfirmed(root)
+	req, _ := human.LoadRequest(root)
 	st.CurrentState = state.StateVerificationFailed
+	if req.Kind == human.KindGitHubAuth || req.Kind == human.KindRulesetConflict {
+		st.CurrentState = state.StatePrepared
+		if ex, err := loadExecution(root); err == nil && ex.VerifiedSuccess {
+			st.CurrentState = state.StateVerified
+		}
+	}
+	if req.Kind == human.KindRuntimeFail {
+		st.CurrentState = state.StateCompleted
+	}
 	if err := g.Save(st); err != nil {
 		return err
 	}
@@ -173,6 +187,17 @@ func (e *Engine) Resume(ctx context.Context, root string) error {
 		return err
 	}
 	unlocked = true
+	switch req.Kind {
+	case human.KindGitHubAuth, human.KindRulesetConflict:
+		if st.CurrentState == state.StateVerified {
+			return e.Reconcile(ctx, root)
+		}
+		_, err := e.Prepare(ctx, Request{ProductRoot: root, PRDOnly: true})
+		return err
+	case human.KindRuntimeFail:
+		_, err := e.StartRuntime(ctx, root)
+		return err
+	}
 	if confirmed {
 		_, err := e.Verify(ctx, Request{ProductRoot: root})
 		return err

@@ -27,6 +27,12 @@ func (e *Engine) Prepare(ctx context.Context, req Request) (Result, error) {
 	if req.Mode == "" {
 		req.Mode = preflight.ModeInteractive
 	}
+	if blocked, res := e.refuseSelfRepo(req.ProductRoot); blocked {
+		return res, nil
+	}
+	if blocked, res := e.contractGate(req); blocked {
+		return res, nil
+	}
 	root, _, err := e.ensureWorkspace(ctx, req.ProductRoot)
 	if err != nil {
 		return refused("", err.Error()), nil
@@ -70,9 +76,21 @@ func (e *Engine) prepareLocked(ctx context.Context, g *state.Guard, st state.Sta
 		doc = parsed
 	}
 	var err error
-	st, err = e.bootstrapRepo(ctx, g, st, root, doc)
+	st, err = e.bootstrapRepo(ctx, g, st, root, doc, req.PRDOnly)
 	if err != nil {
 		return e.persistPrepareRefusal(g, st, root, "", "repository bootstrap: "+err.Error())
+	}
+	if st.CurrentState == state.StateWaitingForHuman {
+		h, _ := human.LoadRequest(root)
+		ex := Execution{
+			SchemaVersion: 1,
+			RunID:         st.CurrentRunID,
+			ProjectID:     st.ProjectID,
+			ProductRoot:   root,
+			RefusalReason: h.Needed,
+			RecordedAt:    e.opts.Now().UTC().Format(time.RFC3339Nano),
+		}
+		return Result{Execution: ex, WaitingForHuman: true, Human: &h, ProjectType: st.ProjectType, ProjectLocation: st.ProjectLocation}, nil
 	}
 
 	mode, _ := preflight.NormalizeMode(req.Mode)
@@ -106,19 +124,30 @@ func (e *Engine) prepareLocked(ctx context.Context, g *state.Guard, st state.Sta
 		mergeGraphStatus(gr, existing)
 	}
 	gr.Refresh()
-	if raw, err := gr.Marshal(); err == nil {
-		_ = g.WriteFile(graphFile, append(raw, '\n'))
-	}
-
-	phaseID := req.PhaseID
-	if phaseID == "" {
-		phaseID = firstReadyPhase(gr)
-		if phaseID == "" {
-			if gr.AllCompleted() {
-				return e.persistProjectCompleted(ctx, g, st, root)
-			}
-			return e.persistPrepareRefusal(g, st, root, "", "no ready phase")
+	if st.CurrentState == state.StateCompleted && st.CurrentPhaseID != "" {
+		if n, ok := gr.Node(graph.NodeID(st.CurrentPhaseID)); ok && n.Status == graph.StatusRunning {
+			markPhase(gr, st.CurrentPhaseID, graph.StatusCompleted)
 		}
+	}
+	persistGraph(g, gr)
+
+	resume := st.CurrentPhaseID
+	if st.CurrentState == state.StateCompleted || st.CurrentState == state.StateWaitingForHuman {
+		resume = ""
+	}
+	phaseID, selErr := selectRunnablePhase(gr, req.PhaseID, resume)
+	if phaseID == "" {
+		if selErr != "" {
+			return e.persistPrepareRefusal(g, st, root, string(req.PhaseID), selErr)
+		}
+		if gr.AllCompleted() {
+			return e.persistProjectCompleted(ctx, g, st, root)
+		}
+		return e.persistPrepareRefusal(g, st, root, "", "no ready phase")
+	}
+	if n, ok := gr.Node(graph.NodeID(phaseID)); !ok || n.Status != graph.StatusRunning {
+		markPhase(gr, string(phaseID), graph.StatusRunning)
+		persistGraph(g, gr)
 	}
 
 	runID := "run_" + e.opts.NewID()
@@ -295,8 +324,11 @@ func (e *Engine) persistProjectCompleted(ctx context.Context, g *state.Guard, st
 	if err := g.Save(st); err != nil {
 		return Result{}, err
 	}
+	rep, _ := e.startRuntimeLocked(ctx, g, st, root)
+	st, _ = g.Load()
 	return Result{
 		ProjectCompleted: true,
+		Runtime:          &rep,
 		Execution: Execution{
 			SchemaVersion:   1,
 			RunID:           st.CurrentRunID,

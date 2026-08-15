@@ -277,6 +277,9 @@ func EvaluateMerge(cfg config.Config, st state.State, ex Execution, pr vcs.PR, c
 	if cfg.RequireApproval && !strings.EqualFold(pr.ReviewDecision, "APPROVED") {
 		return wait("approval policy is not satisfied")
 	}
+	if cfg.MergeMethodName() == config.MergeRebase {
+		return wait("rebase merge is refused")
+	}
 	if !cfg.AutoMergeEnabled {
 		return wait("AutoMergeEnabled is false")
 	}

@@ -284,7 +284,7 @@ func (g *GHClient) MergePR(ctx context.Context, root, number, method string) (Me
 	case "merge":
 		flag = "--merge"
 	case "rebase":
-		flag = "--rebase"
+		return MergeResult{Reason: "refusing rebase merge; history rewrite is not allowed", Method: method}, nil
 	}
 	out, err := g.gh()(ctx, root, "pr", "merge", number, flag)
 	if err != nil {

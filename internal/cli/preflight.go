@@ -13,6 +13,7 @@ func runPreflight(args []string, stdout, stderr io.Writer, rt Runtime) int {
 	for _, a := range args {
 		if a == "-h" || a == "--help" {
 			fmt.Fprintln(stdout, "Usage: prdpr preflight [--json] [--prd FILE] [--mode interactive|headless] [--worker cursor|fake] [directory]")
+			fmt.Fprintln(stdout, docsHint("preflight"))
 			return exitOK
 		}
 	}

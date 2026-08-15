@@ -137,6 +137,13 @@ func TestRepositoryCreationAndInitialPush(t *testing.T) {
 					}
 					return "https://github.com/example/fixture", nil
 				}
+				if len(args) > 0 && args[0] == "api" {
+					joined := strings.Join(args, " ")
+					if strings.Contains(joined, "--method POST") {
+						return `{"id":1,"name":"prdpr-baseline","enforcement":"active","rules":[{"type":"non_fast_forward"}]}`, nil
+					}
+					return "[]", nil
+				}
 				return "", fmt.Errorf("unexpected %v", args)
 			},
 		},
@@ -203,6 +210,13 @@ func TestCrashAfterRemoteCreationDoesNotRecreate(t *testing.T) {
 				if len(args) >= 2 && args[1] == "create" {
 					creates++
 					return "https://github.com/example/fixture", nil
+				}
+				if len(args) > 0 && args[0] == "api" {
+					joined := strings.Join(args, " ")
+					if strings.Contains(joined, "--method POST") {
+						return `{"id":1,"name":"prdpr-baseline","enforcement":"active","rules":[]}`, nil
+					}
+					return "[]", nil
 				}
 				return "", fmt.Errorf("unexpected %v", args)
 			},
@@ -369,6 +383,51 @@ func TestPushFailureRecorded(t *testing.T) {
 	}
 	if !strings.Contains(events(t, root), "push_failed") {
 		t.Fatal(events(t, root))
+	}
+}
+
+func TestGitHubPushFailureRequestsHuman(t *testing.T) {
+	root := goGitFixture(t, true)
+	real := vcs.Default()
+	cfg := config.Defaults()
+	cfg.GitHubEnabled = true
+	cfg.PRBoundary = config.PRBoundaryNever
+	cfg.UseFeatureBranch = false
+	eng := engine.New(engine.Options{
+		Worker:    cursor.Fake{ClaimSuccess: true, WriteRel: "note.txt", WriteBody: "n\n"},
+		NewID:     seqID(),
+		AllowSelf: true,
+		SkipWait:  true,
+		Config:    cfg,
+		Git: &vcs.Client{
+			LookPath: exec.LookPath,
+			Git: func(ctx context.Context, dir string, args ...string) (string, error) {
+				if len(args) > 0 && args[0] == "push" {
+					return "", fmt.Errorf("simulated github push failure")
+				}
+				if len(args) >= 2 && args[0] == "remote" && args[1] == "get-url" {
+					return "https://github.com/example/fixture.git", nil
+				}
+				if len(args) >= 2 && args[0] == "rev-parse" && strings.Contains(args[1], "/") {
+					return "", fmt.Errorf("no upstream")
+				}
+				return real.Git(ctx, dir, args...)
+			},
+		},
+	})
+	res, err := eng.RunPhase(context.Background(), engine.Request{ProductRoot: root, PhaseID: "P1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Completed || !res.Waiting {
+		t.Fatalf("want waiting for GitHub delivery, got completed=%t waiting=%t", res.Completed, res.Waiting)
+	}
+	st := loadState(t, root)
+	if st.CurrentState != state.StateWaitingForHuman {
+		t.Fatalf("state=%s repo=%+v", st.CurrentState, st.Repository)
+	}
+	if st.Repository.PushStatus != state.PushFailed {
+		t.Fatalf("push status=%s", st.Repository.PushStatus)
 	}
 }
 

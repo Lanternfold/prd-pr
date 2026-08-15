@@ -1,11 +1,14 @@
 # ARCHITECTURE: PRD→PR
 
-**Status:** Draft v1  
+**Status:** Design intent (historical + accepted RADs). Not a runtime status report.  
 **Product:** PRD→PR  
 **Companion to:** `PRD.md` (Draft v1)  
+**Implemented behavior:** [`docs/FLOW.md`](docs/FLOW.md), [`docs/GRAPH_AND_LOOPS.md`](docs/GRAPH_AND_LOOPS.md), [`docs/PHASES.md`](docs/PHASES.md), [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md)  
 **Constraint:** Local-first Go **core engine**. Primary UX is a thin Cursor plugin (ADR-012). The engine remains independently executable without Cursor IDE. No SaaS, no cloud orchestrator, no MCP, no database, no message queue.
 
-This document describes how PRD→PR will be built. It does not change product requirements. Accepted review decisions are under [Resolved Architectural Decisions](#resolved-architectural-decisions). Remaining underspecification is under [Open Architectural Questions](#open-architectural-questions).
+This document describes how PRD→PR was designed. Several sections still describe **target** loops (for example §5 `prdpr run PRD.md` as a full product loop, YAML config search order, `pause`/`retry`/`logs` CLI). Those are **not all implemented**. Do not cite this file as proof a feature ships.
+
+Accepted review decisions are under [Resolved Architectural Decisions](#resolved-architectural-decisions). Remaining underspecification is under [Open Architectural Questions](#open-architectural-questions).
 
 ---
 
@@ -125,7 +128,10 @@ internal/
   fsguard/                workspace jail
   state/                  persistence, locking, project/phase machines
   graph/                  DAG, affected-set, replay plan
-  prd/                    PRD parse, IDs, traceability index
+  prd/                    PRD parse, IDs, traceability index, contract validation
+  studio/                 discover Studio root and category directories
+  bootstrap/              project type, placement, Cursor project rules
+  apprun/                 structured local application runtime
   preflight/              environment and dependency inspection
   plan/                   technical plan, design plan, convergence
   packet/                 task packet schema
@@ -181,7 +187,10 @@ The Cursor plugin (when implemented) lives **outside** the engine packages. It i
 | `cli` | Engine CLI UX, flags, live status, interrupt → pause | Business rules; Cursor plugin |
 | `state` | `state.json`, locks, valid transitions | How a phase is implemented; plugin UI |
 | `graph` | Nodes, edges, parallel candidates, affected-set | Whether a node *should* exist; when to run it |
-| `prd` | Structured PRD model + traceability | Execution |
+| `prd` | Structured PRD model + traceability + contract validation | Execution; inventing missing product decisions |
+| `studio` | Discover Studio root/categories from env and layout | Guessing a personal home path |
+| `bootstrap` | Project type, destination, PRD placement, Cursor Rules files | GitHub rulesets; orchestration |
+| `apprun` | Structured local start/ready from project type | Arbitrary PRD shell execution |
 | `preflight` | Readiness report, dependency classification | Installing arbitrary system software without policy |
 | `plan` | Phase graph population, design vs tech plans | Editing product code |
 | `modelrouter` | Task/role → model choice + recorded outcomes | Provider SDKs; Cursor invocation |
@@ -804,6 +813,7 @@ Single binary `prdpr`. This is the **engine interface**, not the primary Cursor 
 |---|---|
 | `init` | Create `.project/`, initial state |
 | `inspect PRD.md` | Parse + report; no execution |
+| `validate-prd PRD.md` | Mandatory PRD contract gate (pre-orchestration; no workspace mutation) |
 | `run PRD.md` | Full loop |
 | `status` | Snapshot + live if lock held |
 | `pause` | Cooperative pause at next safe point; persist |
@@ -906,6 +916,7 @@ Metrics that matter: phase duration, cost, repair count, human minutes, gate fai
 
 ```text
 PRD.md
+  → contract validation (BLOCKING rejects; no product mutation)
   → PRDDocument + trace.json
   → preflight report
   → graph.json + phase plans + DESIGN/ADR artifacts

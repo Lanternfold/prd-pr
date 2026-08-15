@@ -9,10 +9,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lanternfold/prd-pr/internal/apprun"
 	"github.com/lanternfold/prd-pr/internal/ci"
 	"github.com/lanternfold/prd-pr/internal/config"
 	"github.com/lanternfold/prd-pr/internal/cursor"
 	"github.com/lanternfold/prd-pr/internal/fsguard"
+	"github.com/lanternfold/prd-pr/internal/human"
 	"github.com/lanternfold/prd-pr/internal/llm"
 	"github.com/lanternfold/prd-pr/internal/notify"
 	"github.com/lanternfold/prd-pr/internal/packet"
@@ -54,6 +56,9 @@ type Options struct {
 	CI           *ci.Watcher
 	Bell         *notify.Bell
 	SkipWait     bool
+	Cwd          string
+	Home         string
+	Runtime      apprun.Starter
 }
 
 // Request is one coding-worker invocation against a product workspace.
@@ -62,12 +67,19 @@ type Request struct {
 	PRDPath     string
 	PhaseID     prd.PhaseID
 	Mode        string
+	PRDOnly     bool
 }
 
 type Result struct {
 	Execution        Execution
 	Packet           packet.Packet
 	ProjectCompleted bool
+	Contract         *prd.ContractResult
+	WaitingForHuman  bool
+	Human            *human.Request
+	ProjectType      string
+	ProjectLocation  string
+	Runtime          *apprun.Report
 }
 
 // Execution is the persisted P4 record.
@@ -134,6 +146,9 @@ func New(opts Options) *Engine {
 	if opts.Bell == nil {
 		opts.Bell = &notify.Bell{Notify: func(string, string) error { return nil }}
 	}
+	if opts.Runtime == nil {
+		opts.Runtime = apprun.ProcStarter{Runner: opts.ProcRunner}
+	}
 	return &Engine{opts: opts}
 }
 
@@ -193,6 +208,12 @@ func (e *Engine) Run(ctx context.Context, req Request) (Result, error) {
 	if req.Mode == "" {
 		req.Mode = preflight.ModeHeadless
 	}
+	if blocked, res := e.refuseSelfRepo(req.ProductRoot); blocked {
+		return res, nil
+	}
+	if blocked, res := e.contractGate(req); blocked {
+		return res, nil
+	}
 	root, jail, err := e.ensureWorkspace(ctx, req.ProductRoot)
 	if err != nil {
 		return refused("", err.Error()), nil
@@ -228,13 +249,6 @@ func (e *Engine) Run(ctx context.Context, req Request) (Result, error) {
 		if ex, err := loadExecutionFromGuard(g); err == nil && ex.Invoked {
 			pkt, _ := loadPacket(root, ex.PacketRef)
 			return Result{Execution: ex, Packet: pkt}, nil
-		}
-	case state.StateCompleted:
-		if req.PhaseID != "" && string(req.PhaseID) == st.CurrentPhaseID {
-			if ex, err := loadExecutionFromGuard(g); err == nil && ex.Invoked {
-				pkt, _ := loadPacket(root, ex.PacketRef)
-				return Result{Execution: ex, Packet: pkt, ProjectCompleted: st.ProjectStatus == state.StatusProjectCompleted}, nil
-			}
 		}
 	}
 

@@ -85,13 +85,23 @@ func refuseDestructiveGit(args []string) error {
 			}
 		}
 	case "reset":
-		for _, a := range args[1:] {
-			if a == "--hard" || a == "--merge" {
-				return fmt.Errorf("refusing destructive git reset")
-			}
-		}
+		return fmt.Errorf("refusing git reset")
 	case "rebase":
 		return fmt.Errorf("refusing git rebase")
+	case "commit":
+		for _, a := range args[1:] {
+			if a == "--amend" {
+				return fmt.Errorf("refusing git commit --amend")
+			}
+		}
+	case "remote":
+		for _, a := range args[1:] {
+			if a == "set-url" {
+				return fmt.Errorf("refusing to overwrite an existing remote")
+			}
+		}
+	case "filter-branch":
+		return fmt.Errorf("refusing git history rewrite")
 	}
 	return nil
 }

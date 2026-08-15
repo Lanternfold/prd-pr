@@ -66,6 +66,7 @@ func (e *Engine) recoverLocked(ctx context.Context, g *state.Guard, st state.Sta
 func (e *Engine) reconcileDeliveryLocked(ctx context.Context, g *state.Guard, st state.State, root string) (state.State, error) {
 	cfg := e.cfg()
 	remote := firstNonEmpty(st.Repository.RemoteName, cfg.Remote())
+	base := firstNonEmpty(st.Repository.BaseBranch, cfg.Branch())
 	ref := firstNonEmpty(st.Repository.FeatureBranch, st.Repository.Branch, cfg.Branch())
 	sha := st.CurrentCommit
 	if sha == "" {
@@ -73,7 +74,8 @@ func (e *Engine) reconcileDeliveryLocked(ctx context.Context, g *state.Guard, st
 			sha = sn.HeadSHA
 		}
 	}
-	if e.opts.Git.Pushed(ctx, root, remote, ref, sha) {
+	basePush := cfg.FeatureBranches() && ref != "" && base != "" && ref == base
+	if !basePush && e.opts.Git.Pushed(ctx, root, remote, ref, sha) {
 		st.Repository.PushStatus = state.PushPushed
 	}
 	if e.opts.GH == nil || !e.opts.GH.Available() {
@@ -85,7 +87,6 @@ func (e *Engine) reconcileDeliveryLocked(ctx context.Context, g *state.Guard, st
 	if !e.opts.GH.Authenticated(ctx) {
 		return st, nil
 	}
-	base := firstNonEmpty(st.Repository.BaseBranch, cfg.Branch())
 	head := firstNonEmpty(st.Repository.FeatureBranch, st.Repository.Branch)
 	if st.Repository.PRNumber == "" {
 		if found, err := e.opts.GH.FindOpenPR(ctx, root, head, base); err == nil && found.Number != "" {

@@ -18,34 +18,57 @@ const (
 	exitNotImplemented = 1
 )
 
+// DocsURL is the published documentation root for this repository.
+const DocsURL = "https://github.com/lanternfold/prd-pr/blob/main/docs"
+
 const usage = `PRD→PR is a local engineering orchestrator.
 
 Usage:
   prdpr <command> [arguments]
+  prdpr <path/to/PRD.md>
+
+The intended entry point is a PRD path. PRD→PR validates the PRD, places a
+Studio project when needed, then prepares the next READY phase.
 
 Commands:
-  version    Print the PRD→PR version
-  help       Show this help
-  doctor     Inspect the local environment
-  init       Initialize .project/ in a product directory
-  inspect    Parse and validate a PRD.md
-  preflight  Report project and environment readiness
-  prepare    Prepare a task packet without invoking a worker
-  run        Run one coding-worker task against a product workspace
-  verify     Independently verify a prepared implementation
-  review     Diagnose failed verification
-  repair     Prepare a bounded repair packet
-  phase      Headless phase loop (worker, verify, review, repair)
-  commit     Commit verified product files
-  pr         Open a milestone GitHub PR when enabled
-  checks     Inspect GitHub PR/CI checks
-  merge      Evaluate auto-merge policy and merge if allowed
-  feedback   Record one human response
-  resume     Resume after human input
-  status     Show persisted project state
+  version      Print the PRD→PR version
+  help         Show this help
+  doctor       Inspect the local environment
+  init         Initialize .project/ in a product directory
+  inspect      Parse and report a PRD.md
+  validate-prd Contract-validate a PRD before any project mutation
+  bootstrap    Place a PRD into a Studio project and prepare (PRD path only)
+  preflight    Report project and environment readiness
+  prepare      Prepare a task packet without invoking a worker
+  run          Run one coding-worker task against a product workspace
+  verify       Independently verify a prepared implementation
+  review       Diagnose failed verification
+  repair       Prepare a bounded repair packet
+  phase        Walk READY phases (worker, verify, review, repair)
+  commit       Commit verified product files
+  pr           Open a milestone GitHub PR when enabled
+  checks       Inspect GitHub PR/CI checks
+  merge        Evaluate auto-merge policy and merge if allowed
+  runtime      Start local application runtime validation
+  feedback     Record one human response
+  resume       Resume after human input
+  status       Show persisted project state
 
-Use "prdpr help" for this message. Use "prdpr version" to print the version.
+Documentation:
+  User guide:     ` + DocsURL + `/USER_GUIDE.md
+  CLI reference:  ` + DocsURL + `/CLI.md
+  Architecture:   ` + DocsURL + `/FLOW.md
+
+Use "prdpr help" for this message. Use "prdpr <command> --help" for command usage.
+Use "prdpr version" to print the version.
 `
+
+func docsHint(anchor string) string {
+	if strings.TrimSpace(anchor) == "" {
+		return "See " + DocsURL + "/CLI.md"
+	}
+	return "See " + DocsURL + "/CLI.md#" + anchor
+}
 
 // Main dispatches a CLI invocation. args[0] is the program name.
 func Main(args []string, stdout, stderr io.Writer, rt Runtime) int {
@@ -68,6 +91,10 @@ func Main(args []string, stdout, stderr io.Writer, rt Runtime) int {
 		return runInit(args[2:], stdout, stderr)
 	case "inspect":
 		return runInspect(args[2:], stdout, stderr)
+	case "validate-prd":
+		return runValidatePRD(args[2:], stdout, stderr)
+	case "bootstrap":
+		return runBootstrap(args[2:], stdout, stderr, rt)
 	case "preflight":
 		return runPreflight(args[2:], stdout, stderr, rt)
 	case "prepare":
@@ -90,6 +117,8 @@ func Main(args []string, stdout, stderr io.Writer, rt Runtime) int {
 		return runChecks(args[2:], stdout, stderr, rt)
 	case "merge":
 		return runMerge(args[2:], stdout, stderr, rt)
+	case "runtime":
+		return runRuntime(args[2:], stdout, stderr, rt)
 	case "feedback":
 		return runFeedback(args[2:], stdout, stderr, rt)
 	case "resume":
@@ -97,6 +126,9 @@ func Main(args []string, stdout, stderr io.Writer, rt Runtime) int {
 	case "status":
 		return runStatus(args[2:], stdout, stderr)
 	default:
+		if looksLikePRDPath(cmd) {
+			return runBootstrap(args[1:], stdout, stderr, rt)
+		}
 		fmt.Fprintf(stderr, "unknown command %q\n\n", cmd)
 		fmt.Fprint(stderr, usage)
 		return exitUsage

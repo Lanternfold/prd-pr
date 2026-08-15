@@ -1,8 +1,8 @@
 # IMPLEMENTATION PLAN: PRD→PR
 
-**Status:** Draft v3 (canonical PRD §52 phase IDs)  
+**Status:** Delivery history for P0–P13 (canonical PRD §52 IDs). Runtime status: [`docs/PHASES.md`](docs/PHASES.md).  
 **Inputs:** `PRD.md`, `ARCHITECTURE.md`, `ADR/`  
-**Canonical phase IDs:** PRD §52 **P0–P13**. This plan does not use a second numbering system.
+**Canonical phase IDs:** PRD §52 **P0–P13**. This plan does not use a second numbering system. Do not add P14+.
 
 This plan is the bridge from architecture to coding. It preserves PRD phase **identity and scope** while recording **delivery slices** and **runtime invariants** that do not get their own phase IDs.
 
@@ -89,6 +89,30 @@ The orchestrator (P4 safety, then later P5 lifecycle) must be able to determine:
 - clean / dirty working tree
 - baseline commit (recorded before the worker runs)
 - changes introduced by the worker (vs that baseline)
+
+---
+
+## Invariant: PRD contract validation before orchestration
+
+**NO PROJECT CREATION, GIT, GITHUB, OR IMPLEMENTATION UNTIL `prdpr validate-prd` IS VALID.**
+
+This is a **mandatory pre-orchestration gate**, not a P0–P13 phase. The validator answers whether the PRD is precise enough for autonomous implementation. It receives only the PRD path. REJECTED stops the run; a human updates the PRD; validation is repeated. The Cursor plugin Step 0 invokes this command and must not reimplement it.
+
+Authoring expectations: `docs/PRD_AUTHORING_CONTRACT.md`.
+
+---
+
+## Invariant: PRD-only bootstrap (not a new phase ID)
+
+**THE ONLY PRODUCT INPUT IS THE PRD PATH.** `prdpr <PRD.md>` (also `prdpr bootstrap <PRD.md>`) runs contract validation, then places the project using the discovered Studio layout (`PRDPR_STUDIO` or a directory that contains `Tools/` and `Products/`). It does not hardcode a personal product path.
+
+After VALID: determine type/location → create/reuse the destination → place `PRD.md` → minimum type scaffolding → P5 Git/GitHub lifecycle → GitHub Repository Rulesets (not Cursor Rules) → project-local Cursor Rules → `prepare`. Bootstrap is idempotent. Ambiguous type/location or an unrelated existing directory stops with a structured human request.
+
+GitHub Rulesets reinforce local merge policy. They are inspected before write; conflicts do not overwrite. Cursor Rules are engineering guidance only and never override the Go engine.
+
+After verified project completion, `prdpr runtime` starts the application from a structured runtime definition (not arbitrary PRD shell). Startup failure uses bounded repair (infrastructure failures do not consume attempts). Exhaustion is `WAITING_FOR_HUMAN`.
+
+Optional LLM completeness review after the deterministic contract gate is advisory. `BLOCKING_QUESTION` stops for a human; the engine does not mutate the PRD. Default tests use Noop/Static adapters.
 
 ---
 
@@ -387,7 +411,7 @@ The **minimum** local Git safety required before Cursor writes (verify repo/prod
 
 **Files/packages.** `internal/engine` (`run`, `scheduler`, `executor`, `recovery`); live status (PRD §47).
 
-**Definition of Done.** `prdpr run PRD.md` on a small **product fixture** completes or blocks with structured state; `status`/`logs`/`pause`/`resume` work. Deterministic path still works with Noop LLM.
+**Definition of Done (historical target).** A fixture run completes or blocks with structured state. **Implemented today:** `prdpr <PRD.md>` bootstrap+prepare; inner `RunPhase`; outer `prdpr phase` / `RunGraph`; `status` / `feedback` / `resume`. **Not CLI commands:** `logs`, `pause`. `prdpr run` is one worker invocation, not the full product loop.
 
 ---
 

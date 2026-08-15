@@ -104,7 +104,7 @@ func runPhase(args []string, stdout, stderr io.Writer, rt Runtime) int {
 		fmt.Fprintf(stderr, "unknown --worker %q\n", opts.worker)
 		return exitUsage
 	}
-	res, err := engine.New(engOpts).RunPhase(context.Background(), engine.Request{
+	res, err := engine.New(engOpts).RunGraph(context.Background(), engine.Request{
 		ProductRoot: opts.root, PRDPath: opts.prd, PhaseID: opts.phase, Mode: preflight.ModeHeadless,
 	})
 	if err != nil {
@@ -113,13 +113,17 @@ func runPhase(args []string, stdout, stderr io.Writer, rt Runtime) int {
 	}
 	fmt.Fprintf(stdout, "completed: %t\n", res.Completed)
 	fmt.Fprintf(stdout, "waiting_for_human: %t\n", res.Waiting)
+	fmt.Fprintf(stdout, "project_completed: %t\n", res.ProjectCompleted)
+	if len(res.Phases) > 0 {
+		fmt.Fprintf(stdout, "phases: %s\n", strings.Join(res.Phases, ","))
+	}
 	fmt.Fprintf(stdout, "verified_success: %t\n", res.Verification.VerifiedSuccess)
 	fmt.Fprintf(stdout, "worker_claimed_success: %t\n", res.Execution.WorkerClaimedSuccess)
 	if res.Human != nil {
 		fmt.Fprintf(stdout, "human_request: %s\n", res.Human.ID)
 		fmt.Fprintf(stdout, "human_needed: %s\n", res.Human.Needed)
 	}
-	if res.Completed {
+	if res.Completed || res.ProjectCompleted {
 		return exitOK
 	}
 	return exitError
@@ -242,7 +246,7 @@ func parseDirJSON(args []string, usage string) (root string, jsonOut bool, err e
 	for _, a := range args {
 		switch {
 		case a == "-h" || a == "--help":
-			return "", false, fmt.Errorf("%s", usage)
+			return "", false, fmt.Errorf("%s\n%s", usage, docsHint(""))
 		case a == "--json":
 			jsonOut = true
 		case strings.HasPrefix(a, "-"):

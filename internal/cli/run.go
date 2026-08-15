@@ -99,7 +99,7 @@ func parseRunArgs(args []string) (runOpts, error) {
 		a := args[i]
 		switch {
 		case a == "-h" || a == "--help":
-			return runOpts{}, fmt.Errorf("usage: prdpr run [--prd FILE] [--phase ID] [--worker cursor|fake] [--timeout DURATION] [directory]")
+			return runOpts{}, fmt.Errorf("usage: prdpr run [--prd FILE] [--phase ID] [--worker cursor|fake] [--timeout DURATION] [directory]\n%s", docsHint("run"))
 		case a == "--prd":
 			if i+1 >= len(args) {
 				return runOpts{}, fmt.Errorf("usage: prdpr run [--prd FILE] [--phase ID] [--worker cursor|fake] [--timeout DURATION] [directory]")

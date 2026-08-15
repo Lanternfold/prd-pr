@@ -99,6 +99,9 @@ func (c *Client) DeleteBranch(ctx context.Context, root, name string) error {
 	if strings.TrimSpace(current) == name {
 		return fmt.Errorf("refusing to delete the current branch %s", name)
 	}
+	if protectedBranch(name) {
+		return fmt.Errorf("refusing to delete protected/base branch %s", name)
+	}
 	_, err := c.git()(ctx, root, "branch", "-d", name)
 	return err
 }
@@ -112,8 +115,20 @@ func (c *Client) DeleteRemoteBranch(ctx context.Context, root, remote, name stri
 	if name == "" {
 		return fmt.Errorf("branch name is required")
 	}
+	if protectedBranch(name) {
+		return fmt.Errorf("refusing to delete protected/base branch %s", name)
+	}
 	_, err := c.git()(ctx, root, "push", remote, "--delete", name)
 	return err
+}
+
+func protectedBranch(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "main", "master":
+		return true
+	default:
+		return false
+	}
 }
 
 // FastForwardBase updates local base from remote with --ff-only. Dirty trees are left untouched.

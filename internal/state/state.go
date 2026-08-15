@@ -70,6 +70,36 @@ const (
 	EventCostRecorded              = "cost_recorded"
 	EventSubagentDecision          = "subagent_decision"
 	EventRecovered                 = "recovered"
+	EventBootstrapStarted          = "bootstrap_started"
+	EventBootstrapCompleted        = "bootstrap_completed"
+	EventProjectTypeSelected       = "project_type_selected"
+	EventRulesetConfigured         = "ruleset_configured"
+	EventRulesetConflict           = "ruleset_conflict"
+	EventCursorRulesWritten        = "cursor_rules_written"
+	EventCompletenessReviewed      = "completeness_reviewed"
+	EventRuntimeStarted            = "runtime_started"
+	EventRuntimeReady              = "runtime_ready"
+	EventRuntimeFailed             = "runtime_failed"
+	EventRuntimeSkipped            = "runtime_skipped"
+
+	BootstrapPending     = "pending"
+	BootstrapPlaced      = "placed"
+	BootstrapGit         = "git"
+	BootstrapGitHub      = "github"
+	BootstrapRuleset     = "ruleset"
+	BootstrapCursorRules = "cursor_rules"
+	BootstrapComplete    = "complete"
+
+	RuntimePending = "pending"
+	RuntimeReady   = "ready"
+	RuntimeFailed  = "failed"
+	RuntimeSkipped = "skipped"
+	RuntimeRunning = "running"
+
+	RulesetCreated  = "created"
+	RulesetExists   = "exists"
+	RulesetSkipped  = "skipped"
+	RulesetConflict = "conflict"
 
 	StatePrepared               = "PREPARED"
 	StateWorkerRunning          = "WORKER_RUNNING"
@@ -122,9 +152,38 @@ type State struct {
 	CurrentState        string     `json:"current_state"`
 	CurrentCommit       string     `json:"current_commit"`
 	LastKnownGoodCommit string     `json:"last_known_good_commit"`
+	PRDPath             string     `json:"prd_path,omitempty"`
+	ProjectType         string     `json:"project_type,omitempty"`
+	ProjectLocation     string     `json:"project_location,omitempty"`
+	StudioCategory      string     `json:"studio_category,omitempty"`
 	Repository          Repository `json:"repository,omitempty"`
+	Bootstrap           Bootstrap  `json:"bootstrap,omitempty"`
+	Runtime             Runtime    `json:"runtime,omitempty"`
 	CreatedAt           string     `json:"created_at"`
 	UpdatedAt           string     `json:"updated_at"`
+}
+
+// Bootstrap is resumable PRD-only project placement. It never stores secrets.
+type Bootstrap struct {
+	Status          string `json:"status,omitempty"`
+	SourcePRD       string `json:"source_prd,omitempty"`
+	Destination     string `json:"destination,omitempty"`
+	GitDone         bool   `json:"git_done,omitempty"`
+	GitHubDone      bool   `json:"github_done,omitempty"`
+	RulesetDone     bool   `json:"ruleset_done,omitempty"`
+	CursorRulesDone bool   `json:"cursor_rules_done,omitempty"`
+}
+
+// Runtime is local application startup state. It never stores secrets.
+type Runtime struct {
+	Status     string `json:"status,omitempty"`
+	Kind       string `json:"kind,omitempty"`
+	Command    string `json:"command,omitempty"`
+	URL        string `json:"url,omitempty"`
+	Ready      bool   `json:"ready,omitempty"`
+	Attempts   int    `json:"attempts,omitempty"`
+	LastError  string `json:"last_error,omitempty"`
+	IncidentID string `json:"incident_id,omitempty"`
 }
 
 // Repository is the product Git/GitHub lifecycle snapshot. It never stores credentials.
@@ -159,6 +218,9 @@ type Repository struct {
 	MergeRepository     string            `json:"merge_repository,omitempty"`
 	ChecksStatus        string            `json:"checks_status,omitempty"`
 	GitHubBlock         string            `json:"github_block,omitempty"`
+	RulesetName         string            `json:"ruleset_name,omitempty"`
+	RulesetID           string            `json:"ruleset_id,omitempty"`
+	RulesetStatus       string            `json:"ruleset_status,omitempty"`
 }
 
 // Event is one append-only journal line. It is not the source of truth.

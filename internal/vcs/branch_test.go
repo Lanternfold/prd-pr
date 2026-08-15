@@ -59,6 +59,9 @@ func TestDeleteBranchSafeAndRefusesCurrent(t *testing.T) {
 	if err := c.DeleteBranch(ctx, root, "feature-tmp"); err != nil {
 		t.Fatal(err)
 	}
+	if err := c.DeleteBranch(ctx, root, "main"); err == nil {
+		t.Fatal("must refuse deleting protected/base branch")
+	}
 }
 
 func TestFeatureBranchNameDeterministic(t *testing.T) {

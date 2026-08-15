@@ -47,7 +47,7 @@ Four layers stay distinct:
 3. **Cursor Plugin Interface** — Cursor-facing entry point. Invokes the engine, passes workspace/project context, presents state/results, guides Cursor through the workflow. Does **not** own orchestration logic.
 4. **Worker Adapters** — implementation execution (P4 Cursor worker: task packet + subprocess). The plugin is **not** the worker. Do not collapse plugin and worker into one abstraction (ADR-004).
 
-The plugin must **not** duplicate: orchestration state, DAG, repair, retry counts, Git semantics, verification, knowledge storage, or model routing.
+The plugin must **not** duplicate: orchestration state, DAG, repair, retry counts, Git semantics, verification, knowledge storage, model routing, or PRD contract validation. Step 0 of `/prdpr` is `prdpr validate-prd`; REJECTED stops before project creation. After VALID, `prdpr <PRD.md>` bootstraps Studio placement and prepare. The plugin must not call `prdpr run`.
 
 **Plugin V0 (interface milestone, not a new PRD phase):** plugin manifest, one `/prdpr` command, one PRD→PR skill, minimal documentation. No MCP, subagents, hooks, custom agents, SDK, cloud services, databases, or extra commands unless strictly necessary.
 

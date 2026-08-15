@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/lanternfold/prd-pr/internal/graph"
 	"github.com/lanternfold/prd-pr/internal/human"
@@ -15,12 +16,14 @@ import (
 )
 
 type PhaseResult struct {
-	Execution    Execution
-	Verification testeng.Result
-	Incident     repair.Incident
-	Human        *human.Request
-	Completed    bool
-	Waiting      bool
+	Execution        Execution
+	Verification     testeng.Result
+	Incident         repair.Incident
+	Human            *human.Request
+	Completed        bool
+	Waiting          bool
+	ProjectCompleted bool
+	Phases           []string
 }
 
 // RunPhase is the headless sequential loop for one phase: worker, verify, review, bounded repair.
@@ -37,6 +40,15 @@ func (e *Engine) RunPhase(ctx context.Context, req Request) (PhaseResult, error)
 		return out, err
 	}
 	out.Execution = run.Execution
+	out.Human = run.Human
+	out.Waiting = run.WaitingForHuman
+	out.ProjectCompleted = run.ProjectCompleted
+	if run.Execution.PhaseID != "" {
+		out.Phases = []string{run.Execution.PhaseID}
+	}
+	if run.WaitingForHuman || run.ProjectCompleted {
+		return out, nil
+	}
 	if run.Execution.RefusalReason != "" && !run.Execution.Invoked {
 		return out, nil
 	}
@@ -46,6 +58,11 @@ func (e *Engine) RunPhase(ctx context.Context, req Request) (PhaseResult, error)
 	}
 	out.Verification = v
 	if v.VerifiedSuccess {
+		if waiting, h := e.deliveryWaiting(run.Execution.ProductRoot); waiting {
+			out.Waiting = true
+			out.Human = h
+			return out, nil
+		}
 		out.Completed = true
 		return out, nil
 	}
@@ -124,13 +141,86 @@ func (e *Engine) RunPhase(ctx context.Context, req Request) (PhaseResult, error)
 	return out, nil
 }
 
-func (e *Engine) completeLocked(ctx context.Context, g *state.Guard, st state.State, root string) error {
+// RunGraph walks READY phases sequentially. Each phase uses RunPhase as the inner loop.
+func (e *Engine) RunGraph(ctx context.Context, req Request) (PhaseResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if req.Mode == "" {
+		req.Mode = preflight.ModeHeadless
+	}
+	var acc PhaseResult
+	seen := map[string]bool{}
+	phaseReq := req
+	root := strings.TrimSpace(req.ProductRoot)
 	if gr := loadGraph(root); gr != nil {
-		markPhase(gr, st.CurrentPhaseID, graph.StatusCompleted)
-		if raw, err := gr.Marshal(); err == nil {
-			_ = g.WriteFile(graphFile, append(raw, '\n'))
+		gr.Refresh()
+		if gr.AllCompleted() {
+			acc.ProjectCompleted = true
+			return acc, nil
+		}
+		if w := firstWaitingPhase(gr); w != "" {
+			acc.Waiting = true
+			return acc, nil
 		}
 	}
+	for {
+		res, err := e.RunPhase(ctx, phaseReq)
+		if res.Execution.PhaseID != "" {
+			acc.Phases = append(acc.Phases, res.Execution.PhaseID)
+		}
+		acc.Execution = res.Execution
+		acc.Verification = res.Verification
+		acc.Incident = res.Incident
+		acc.Human = res.Human
+		acc.Completed = res.Completed
+		acc.Waiting = res.Waiting
+		acc.ProjectCompleted = res.ProjectCompleted
+		if err != nil {
+			return acc, err
+		}
+		if res.Waiting || res.ProjectCompleted {
+			return acc, nil
+		}
+		if !res.Completed {
+			return acc, nil
+		}
+		root := res.Execution.ProductRoot
+		if root == "" {
+			root = req.ProductRoot
+		}
+		if res.Execution.PhaseID != "" {
+			if seen[res.Execution.PhaseID] {
+				return acc, nil
+			}
+			seen[res.Execution.PhaseID] = true
+		}
+		gr := loadGraph(root)
+		if gr == nil {
+			return acc, nil
+		}
+		gr.Refresh()
+		if gr.AllCompleted() {
+			acc.ProjectCompleted = true
+			return acc, nil
+		}
+		if w := firstWaitingPhase(gr); w != "" {
+			acc.Waiting = true
+			return acc, nil
+		}
+		next := firstReadyPhase(gr)
+		if next == "" {
+			return acc, nil
+		}
+		phaseReq.ProductRoot = root
+		phaseReq.PhaseID = next
+		phaseReq.PRDPath = req.PRDPath
+		phaseReq.Mode = req.Mode
+		phaseReq.PRDOnly = req.PRDOnly
+	}
+}
+
+func (e *Engine) completeLocked(ctx context.Context, g *state.Guard, st state.State, root string) error {
 	ks := knowledge.ProjectStore(root)
 	_, _ = ks.Put(knowledge.Entry{
 		Category:    "test_command",
@@ -158,10 +248,20 @@ func (e *Engine) completeLocked(ctx context.Context, g *state.Guard, st state.St
 		if err != nil {
 			return err
 		}
+		if st.CurrentState == state.StateWaitingForHuman {
+			return g.Save(st)
+		}
 		st, err = e.maybeDeliverLocked(ctx, g, st, root)
 		if err != nil {
 			return err
 		}
+		if st.CurrentState == state.StateWaitingForHuman {
+			return g.Save(st)
+		}
+	}
+	if gr := loadGraph(root); gr != nil {
+		markPhase(gr, st.CurrentPhaseID, graph.StatusCompleted)
+		persistGraph(g, gr)
 	}
 	st.CurrentState = state.StateCompleted
 	_ = g.AppendEvent(state.Event{
@@ -170,7 +270,42 @@ func (e *Engine) completeLocked(ctx context.Context, g *state.Guard, st state.St
 		RunID:   st.CurrentRunID,
 		PhaseID: st.CurrentPhaseID,
 	})
+	if gr := loadGraph(root); gr != nil && gr.AllCompleted() {
+		st.ProjectStatus = state.StatusProjectCompleted
+		if !e.cfg().AutoCommit {
+			var err error
+			st, err = e.maybeDeliverLocked(ctx, g, st, root)
+			if err != nil {
+				return err
+			}
+			if st.CurrentState == state.StateWaitingForHuman {
+				return g.Save(st)
+			}
+		}
+		_, err := e.startRuntimeLocked(ctx, g, st, root)
+		return err
+	}
 	return g.Save(st)
+}
+
+func (e *Engine) deliveryWaiting(root string) (bool, *human.Request) {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		return false, nil
+	}
+	store, err := state.Open(root)
+	if err != nil {
+		return false, nil
+	}
+	snap, err := store.Load()
+	if err != nil || snap.CurrentState != state.StateWaitingForHuman {
+		return false, nil
+	}
+	req, err := human.LoadRequest(root)
+	if err != nil {
+		return true, nil
+	}
+	return true, &req
 }
 
 func (e *Engine) CommitVerified(ctx context.Context, root, message string) (string, error) {

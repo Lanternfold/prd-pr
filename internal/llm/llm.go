@@ -7,11 +7,13 @@ import (
 )
 
 const (
-	RoleReview    = "review"
-	RoleDiagnosis = "diagnosis"
-	RolePlanning  = "planning"
-	RoleLearning  = "learning"
-	RoleRepair    = "repair"
+	RoleReview       = "review"
+	RoleDiagnosis    = "diagnosis"
+	RolePlanning     = "planning"
+	RoleLearning     = "learning"
+	RoleRepair       = "repair"
+	RoleCompleteness = "completeness"
+	RoleRuntime      = "runtime"
 )
 
 // Request is a single completion. It must not contain secrets.

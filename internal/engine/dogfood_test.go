@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/lanternfold/prd-pr/internal/config"
@@ -134,8 +135,8 @@ func TestFeedbackDoesNotStoreSecretShapedTextUnredactedInEvents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(data) == "" {
-		t.Fatal("events")
+	if strings.Contains(string(data), "sk-abcdefghijklmnopqrstuvwxyz123456") {
+		t.Fatal("secret leaked into events")
 	}
 }
 

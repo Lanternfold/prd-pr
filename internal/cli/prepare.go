@@ -14,6 +14,7 @@ func runPrepare(args []string, stdout, stderr io.Writer, rt Runtime) int {
 	for _, a := range args {
 		if a == "-h" || a == "--help" {
 			fmt.Fprintln(stdout, "Usage: prdpr prepare [--prd FILE] [--phase ID] [directory]")
+			fmt.Fprintln(stdout, docsHint("prepare"))
 			return exitOK
 		}
 	}
@@ -47,6 +48,9 @@ func runPrepare(args []string, stdout, stderr io.Writer, rt Runtime) int {
 		return exitOK
 	}
 	if ex.RefusalReason != "" {
+		if res.Contract != nil && res.Contract.Rejected() {
+			_ = prd.FormatContract(stdout, res.Contract)
+		}
 		fmt.Fprintf(stderr, "refused: %s\n", ex.RefusalReason)
 		fmt.Fprintf(stdout, "prepared: false\n")
 		fmt.Fprintf(stdout, "invoked: false\n")

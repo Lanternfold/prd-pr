@@ -182,6 +182,8 @@ configured LLM APIs where required
 
 The **core engine** is a local Go binary. It must remain usable without Cursor IDE (CLI/tests/fakes). The **primary user-facing interface** is a Cursor-native plugin that invokes that engine (see §46). Cursor CLI remains the coding **worker** transport. The plugin is not the worker.
 
+Day-to-day invocation is PRD-path only: `prdpr <PRD.md>` or `/prdpr`. The engine discovers Studio placement from `PRDPR_STUDIO` or a directory that contains `Tools/` and `Products/`. It must not hardcode a personal product path.
+
 PRD→PR itself will live at:
 
 ~/Studio/Tools/prd-pr/
@@ -425,7 +427,27 @@ This directory belongs to the product repository.
 
 The orchestrator consumes a PRD.md.
 
-The PRD should support:
+**Mandatory pre-orchestration gate (not a new phase ID):** `prdpr validate-prd` must reject a PRD that is not sufficiently complete and unambiguous for autonomous implementation. The gate runs from the PRD path only. It must not create a Studio project, product directory, Git repository, GitHub resource, or Cursor invocation. REJECTED means stop until a human updates the PRD. VALID may proceed to bootstrap → prepare → implementation.
+
+Authoring expectations for product PRDs are in `docs/PRD_AUTHORING_CONTRACT.md`. The PRD should support:
+
+product definition
+goals
+non-goals
+users
+user journeys
+requirements
+acceptance criteria
+design
+technical stack
+architecture
+dependencies
+credentials
+testing
+security
+phases
+human validation
+Definition of Done
 
 product definition
 goals
@@ -1228,6 +1250,7 @@ Initial engine commands:
 
 prdpr init
 prdpr inspect PRD.md
+prdpr validate-prd PRD.md
 prdpr run PRD.md
 prdpr status
 prdpr pause

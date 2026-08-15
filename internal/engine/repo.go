@@ -9,6 +9,7 @@ import (
 
 	"github.com/lanternfold/prd-pr/internal/config"
 	"github.com/lanternfold/prd-pr/internal/fsguard"
+	"github.com/lanternfold/prd-pr/internal/human"
 	"github.com/lanternfold/prd-pr/internal/prd"
 	"github.com/lanternfold/prd-pr/internal/state"
 	"github.com/lanternfold/prd-pr/internal/vcs"
@@ -79,7 +80,7 @@ func (e *Engine) repoIdentity(doc *prd.Document) (owner, name string) {
 	return owner, name
 }
 
-func (e *Engine) bootstrapRepo(ctx context.Context, g *state.Guard, st state.State, root string, doc *prd.Document) (state.State, error) {
+func (e *Engine) bootstrapRepo(ctx context.Context, g *state.Guard, st state.State, root string, doc *prd.Document, prdOnly bool) (state.State, error) {
 	if !e.opts.AllowSelf && isOrchestratorRepo(root) {
 		return st, fmt.Errorf("refusing to bootstrap the PRD→PR orchestrator repository")
 	}
@@ -140,9 +141,12 @@ func (e *Engine) bootstrapRepo(ctx context.Context, g *state.Guard, st state.Sta
 		repo.Branch = cfg.Branch()
 	}
 
-	st, err := e.configureRemote(ctx, g, st, root, doc, repo, cfg)
+	st, err := e.configureRemote(ctx, g, st, root, doc, repo, cfg, prdOnly)
 	if err != nil {
 		return st, err
+	}
+	if st.CurrentState == state.StateWaitingForHuman {
+		return st, g.Save(st)
 	}
 	repo = st.Repository
 	_ = g.AppendEvent(state.Event{
@@ -170,6 +174,10 @@ func (e *Engine) bootstrapRepo(ctx context.Context, g *state.Guard, st state.Sta
 			return st, err
 		}
 	}
+	st, err = e.ensureRulesetLocked(ctx, g, st, root, doc, prdOnly)
+	if err != nil {
+		return st, err
+	}
 	return st, g.Save(st)
 }
 
@@ -188,7 +196,7 @@ func (e *Engine) inspectExisting(ctx context.Context, root string, repo state.Re
 	return repo
 }
 
-func (e *Engine) configureRemote(ctx context.Context, g *state.Guard, st state.State, root string, doc *prd.Document, repo state.Repository, cfg config.Config) (state.State, error) {
+func (e *Engine) configureRemote(ctx context.Context, g *state.Guard, st state.State, root string, doc *prd.Document, repo state.Repository, cfg config.Config, prdOnly bool) (state.State, error) {
 	existingURL := e.opts.Git.RemoteURL(ctx, root, cfg.Remote())
 	if existingURL != "" {
 		repo.RemoteName = cfg.Remote()
@@ -225,9 +233,15 @@ func (e *Engine) configureRemote(ctx context.Context, g *state.Guard, st state.S
 	}
 
 	if e.opts.GH == nil || !e.opts.GH.Available() {
+		if prdOnly {
+			return e.githubHuman(g, st, repo, "gh is not available")
+		}
 		return e.skipRemote(g, st, repo, state.GitHubUnavailable, "gh is not available; continuing locally")
 	}
 	if !e.opts.GH.Authenticated(ctx) {
+		if prdOnly {
+			return e.githubHuman(g, st, repo, "gh is not authenticated")
+		}
 		return e.skipRemote(g, st, repo, state.GitHubUnavailable, "gh is not authenticated; continuing locally")
 	}
 
@@ -238,6 +252,9 @@ func (e *Engine) configureRemote(ctx context.Context, g *state.Guard, st state.S
 
 	exists, url, err := e.opts.GH.RepoExists(ctx, owner, name)
 	if err != nil {
+		if prdOnly {
+			return e.githubHuman(g, st, repo, "GitHub repository lookup failed: "+err.Error())
+		}
 		return e.skipRemote(g, st, repo, state.GitHubUnavailable, "GitHub repository lookup failed: "+err.Error())
 	}
 	if !exists {
@@ -248,6 +265,9 @@ func (e *Engine) configureRemote(ctx context.Context, g *state.Guard, st state.S
 			Description: firstNonEmpty(cfg.GitHubDescription, descriptionFromDoc(doc)),
 		})
 		if err != nil {
+			if prdOnly {
+				return e.githubHuman(g, st, repo, "GitHub repository creation failed: "+err.Error())
+			}
 			return e.skipRemote(g, st, repo, state.GitHubUnavailable, "GitHub repository creation skipped: "+err.Error())
 		}
 		repo.GitHubStatus = state.GitHubCreated
@@ -289,6 +309,25 @@ func (e *Engine) skipRemote(g *state.Guard, st state.State, repo state.Repositor
 		Payload: state.Payload(map[string]string{"reason": reason, "github_status": ghStatus}),
 	})
 	st.Repository = repo
+	return st, nil
+}
+
+func (e *Engine) githubHuman(g *state.Guard, st state.State, repo state.Repository, reason string) (state.State, error) {
+	repo.SkipReason = reason
+	repo.GitHubStatus = state.GitHubUnavailable
+	st.Repository = repo
+	h := human.Request{
+		Kind:    human.KindGitHubAuth,
+		Reason:  "github_unavailable",
+		Needed:  reason + ". Authenticate with gh, then prdpr resume. Local Git state was preserved.",
+		Urgency: human.UrgencyHigh,
+	}
+	root := st.ProductRoot
+	if root == "" {
+		root = repo.LocalRoot
+	}
+	_, _ = e.requestHumanLocked(g, st, root, h)
+	st.CurrentState = state.StateWaitingForHuman
 	return st, nil
 }
 
@@ -405,9 +444,22 @@ func (e *Engine) pushLocked(ctx context.Context, g *state.Guard, st state.State,
 		st.Repository = repo
 		return st, nil
 	}
-	ref := repo.Branch
+	ref := firstNonEmpty(repo.FeatureBranch, repo.Branch)
 	if ref == "" {
 		ref = cfg.Branch()
+	}
+	base := firstNonEmpty(repo.BaseBranch, cfg.Branch())
+	if !initial && cfg.FeatureBranches() && ref != "" && base != "" && ref == base {
+		repo.PushStatus = state.PushFailed
+		_ = g.AppendEvent(state.Event{
+			Kind:    state.KindResult,
+			Name:    state.EventPushFailed,
+			RunID:   st.CurrentRunID,
+			PhaseID: st.CurrentPhaseID,
+			Payload: state.Payload(map[string]string{"error": "refusing push to protected/base branch " + base}),
+		})
+		st.Repository = repo
+		return st, nil
 	}
 	sha := st.CurrentCommit
 	if sha == "" {
@@ -430,6 +482,9 @@ func (e *Engine) pushLocked(ctx context.Context, g *state.Guard, st state.State,
 			Payload: state.Payload(map[string]string{"error": err.Error(), "initial": fmt.Sprintf("%t", initial)}),
 		})
 		st.Repository = repo
+		if cfg.GitHubEnabled && !initial {
+			return e.githubHuman(g, st, repo, "git push failed: "+err.Error())
+		}
 		return st, nil
 	}
 	repo.PushStatus = state.PushPushed

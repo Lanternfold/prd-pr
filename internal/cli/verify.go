@@ -14,6 +14,7 @@ func runVerify(args []string, stdout, stderr io.Writer, rt Runtime) int {
 	for _, a := range args {
 		if a == "-h" || a == "--help" {
 			fmt.Fprintln(stdout, "Usage: prdpr verify [--json] [directory]")
+			fmt.Fprintln(stdout, docsHint("verify"))
 			return exitOK
 		}
 	}
