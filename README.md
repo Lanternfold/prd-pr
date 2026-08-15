@@ -25,12 +25,12 @@ Default tests do not call paid LLM APIs or live Cursor.
 
 ## Quick start
 
-1. Install Go (see `go.mod`) and Git.
-2. Build the engine:
+1. Install `prdpr` (see [docs/USER_GUIDE.md](docs/USER_GUIDE.md#installation-and-setup)).
+2. Confirm the install:
 
 ```bash
-go build -o dist/prdpr ./cmd/prdpr
-export PATH="$PWD/dist:$PATH"
+prdpr version
+prdpr doctor
 ```
 
 3. Write a PRD that can pass `prdpr validate-prd`. See [docs/PRD_AUTHORING_CONTRACT.md](docs/PRD_AUTHORING_CONTRACT.md).
@@ -41,6 +41,19 @@ prdpr path/to/PRD.md
 ```
 
 That is the intended entry point: a **PRD path**, not a manually prepared product directory. PRD→PR places a Studio project when needed, then prepares the next READY phase.
+
+**Normal users** should install a released binary once a GitHub Release exists. The first planned release is **v0.1.0**; it has not been published yet. Until then, install from a Git checkout.
+
+**Contributors** clone this repository and build with Go:
+
+```bash
+git clone https://github.com/lanternfold/prd-pr
+cd prd-pr
+go build -o dist/prdpr ./cmd/prdpr
+export PATH="$PWD/dist:$PATH"
+```
+
+From a checkout, `go install ./cmd/prdpr` is a source/developer installation path (the binary reports `dev` unless you set `-ldflags`). It is not the released-binary install.
 
 Interactive Cursor: install the thin plugin in [prdpr-cursor/](prdpr-cursor/README.md) and run `/prdpr`. Headless: `prdpr phase` (uses `cursor-agent`). Do not mix those paths in one session.
 

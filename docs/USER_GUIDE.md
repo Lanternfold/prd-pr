@@ -28,10 +28,6 @@ The human is an **exception handler**: unresolved product decisions, missing cre
 ## Quick start
 
 ```bash
-git clone https://github.com/lanternfold/prd-pr
-cd prd-pr
-go build -o dist/prdpr ./cmd/prdpr
-export PATH="$PWD/dist:$PATH"
 prdpr doctor
 prdpr validate-prd path/to/PRD.md
 prdpr path/to/PRD.md
@@ -41,16 +37,47 @@ prdpr path/to/PRD.md
 
 ## Installation and setup
 
+### Released binary (normal users)
+
+The first versioned release will be **v0.1.0**. It is not published yet.
+
+After a GitHub Release exists, download the `prdpr` artifact that matches your OS and architecture, verify it against the release checksums file, and put the binary on your `PATH`. Then run `prdpr version` and `prdpr doctor`.
+
+Until that release exists, install from a Git checkout.
+
+### Git checkout (contributors)
+
+```bash
+git clone https://github.com/lanternfold/prd-pr
+cd prd-pr
+go test ./...
+go build -o dist/prdpr ./cmd/prdpr
+export PATH="$PWD/dist:$PATH"
+prdpr doctor
+```
+
+A checkout build reports version `dev` unless you inject a version at link time.
+
+### Source install with Go
+
+From a clone of this repository:
+
+```bash
+go install ./cmd/prdpr
+```
+
+This is a **source/developer** installation path. It puts `prdpr` in your Go bin directory (`GOBIN` or `$(go env GOPATH)/bin`). The binary reports `dev` unless you pass `-ldflags`. Use a released binary for normal use once one exists.
+
 ### Prerequisites
 
 | Requirement | Status |
 |---|---|
-| Go (version in `go.mod`) | Required to build |
 | Git | Required |
 | A PRD that can pass contract validation | Required |
 | Studio layout (`Tools/`, `Products/`, …) or `PRDPR_STUDIO` | Required for PRD-only bootstrap |
 | Cursor IDE | Required for interactive `/prdpr` |
 | `prdpr` on `PATH` (or `dist/prdpr` in this repo) | Required |
+| Go (version in `go.mod`) | Required to build from source; not required to run a released binary |
 | `cursor-agent` | Required only for headless `prdpr run` / `prdpr phase` |
 | `gh` + GitHub auth | Optional; needed when GitHub delivery is enabled |
 
