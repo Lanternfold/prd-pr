@@ -63,11 +63,12 @@ type Options struct {
 
 // Request is one coding-worker invocation against a product workspace.
 type Request struct {
-	ProductRoot string
-	PRDPath     string
-	PhaseID     prd.PhaseID
-	Mode        string
-	PRDOnly     bool
+	ProductRoot   string
+	PRDPath       string
+	PhaseID       prd.PhaseID
+	Mode          string
+	ExecutionMode string
+	PRDOnly       bool
 }
 
 type Result struct {
@@ -84,29 +85,31 @@ type Result struct {
 
 // Execution is the persisted P4 record.
 type Execution struct {
-	SchemaVersion        int          `json:"schema_version"`
-	RunID                string       `json:"run_id"`
-	TaskID               string       `json:"task_id"`
-	ProjectID            string       `json:"project_id"`
-	PhaseID              string       `json:"phase_id"`
-	ProductRoot          string       `json:"product_root"`
-	Baseline             vcs.Baseline `json:"baseline"`
-	PacketRef            string       `json:"packet_ref"`
-	TranscriptRef        string       `json:"transcript_ref,omitempty"`
-	Invoked              bool         `json:"invoked"`
-	RefusalReason        string       `json:"refusal_reason,omitempty"`
-	ExitCode             int          `json:"exit_code"`
-	DurationMS           int64        `json:"duration_ms"`
-	TimedOut             bool         `json:"timed_out"`
-	ChangedPaths         []string     `json:"changed_paths"`
-	WorkerClaimedSuccess bool         `json:"worker_claimed_success"`
-	ClaimedDone          bool         `json:"claimed_done"`
-	VerifiedSuccess      bool         `json:"verified_success"`
-	CLIMechanism         string       `json:"cli_mechanism,omitempty"`
-	RecordedAt           string       `json:"recorded_at"`
-	IncidentID           string       `json:"incident_id,omitempty"`
-	RepairAttempt        int          `json:"repair_attempt,omitempty"`
-	Subagent             string       `json:"subagent,omitempty"`
+	SchemaVersion        int                   `json:"schema_version"`
+	RunID                string                `json:"run_id"`
+	TaskID               string                `json:"task_id"`
+	ProjectID            string                `json:"project_id"`
+	PhaseID              string                `json:"phase_id"`
+	ProductRoot          string                `json:"product_root"`
+	Baseline             vcs.Baseline          `json:"baseline"`
+	PacketRef            string                `json:"packet_ref"`
+	TranscriptRef        string                `json:"transcript_ref,omitempty"`
+	Invoked              bool                  `json:"invoked"`
+	RefusalReason        string                `json:"refusal_reason,omitempty"`
+	ExitCode             int                   `json:"exit_code"`
+	DurationMS           int64                 `json:"duration_ms"`
+	TimedOut             bool                  `json:"timed_out"`
+	ChangedPaths         []string              `json:"changed_paths"`
+	WorkerClaimedSuccess bool                  `json:"worker_claimed_success"`
+	ClaimedDone          bool                  `json:"claimed_done"`
+	VerifiedSuccess      bool                  `json:"verified_success"`
+	CLIMechanism         string                `json:"cli_mechanism,omitempty"`
+	RecordedAt           string                `json:"recorded_at"`
+	IncidentID           string                `json:"incident_id,omitempty"`
+	RepairAttempt        int                   `json:"repair_attempt,omitempty"`
+	Subagent             string                `json:"subagent,omitempty"`
+	ExecutionMode        string                `json:"execution_mode,omitempty"`
+	SelfDevelopment      state.SelfDevelopment `json:"self_development,omitempty"`
 }
 
 type Engine struct {
@@ -208,17 +211,24 @@ func (e *Engine) Run(ctx context.Context, req Request) (Result, error) {
 	if req.Mode == "" {
 		req.Mode = preflight.ModeHeadless
 	}
+	if DeclaredSelfDevelopment(req.ExecutionMode) {
+		return e.runSelfDevelopment(ctx, req)
+	}
 	if blocked, res := e.refuseSelfRepo(req.ProductRoot); blocked {
 		return res, nil
 	}
+	return e.runProduct(ctx, req, false)
+}
+
+func (e *Engine) runProduct(ctx context.Context, req Request, selfDev bool) (Result, error) {
 	if blocked, res := e.contractGate(req); blocked {
 		return res, nil
 	}
-	root, jail, err := e.ensureWorkspace(ctx, req.ProductRoot)
+	root, jail, err := e.ensureWorkspace(ctx, req.ProductRoot, selfDev)
 	if err != nil {
 		return refused("", err.Error()), nil
 	}
-	if !e.opts.AllowSelf && isOrchestratorRepo(root) {
+	if !e.opts.AllowSelf && !selfDev && isOrchestratorRepo(root) {
 		return refused(root, "refusing to invoke a coding worker against the PRD→PR orchestrator repository"), nil
 	}
 
@@ -252,7 +262,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (Result, error) {
 		}
 	}
 
-	prep, err := e.prepareLocked(ctx, g, st, req, root)
+	prep, err := e.prepareLocked(ctx, g, st, req, root, selfDev)
 	if err != nil {
 		return Result{}, err
 	}

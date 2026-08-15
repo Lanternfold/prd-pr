@@ -73,8 +73,18 @@ func (e *Engine) OpenFromPRD(ctx context.Context, prdPath string) (Result, error
 	}
 
 	dest := bootstrap.Destination(lay.Root, sel.Category, sel.Slug)
-	if !e.opts.AllowSelf && isOrchestratorRepo(dest) {
-		return refused(dest, "refusing to use the PRD→PR orchestrator repository as a product workspace"), nil
+	if isOrchestratorRepo(dest) {
+		if PRDDeclaresSelfDevelopment(abs) {
+			return e.Prepare(ctx, Request{
+				ProductRoot:   dest,
+				PRDPath:       abs,
+				PRDOnly:       true,
+				ExecutionMode: state.ExecutionModeSelfDevelopment,
+			})
+		}
+		if !e.opts.AllowSelf {
+			return refused(dest, "refusing to use the PRD→PR orchestrator repository as a product workspace"), nil
+		}
 	}
 
 	placed, err := bootstrap.Place(abs, dest, sel, doc)

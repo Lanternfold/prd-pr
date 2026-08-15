@@ -140,13 +140,15 @@ Same as `prdpr bootstrap`.
 
 <a id="prepare"></a>
 
-## `prdpr prepare [--prd FILE] [--phase ID] [directory]`
+## `prdpr prepare [--prd FILE] [--phase ID] [--self-development] [directory]`
 
 **What it does:** Builds a deterministic task packet and Git baseline. Selects the first READY phase when `--phase` is omitted. Runs preflight internally (interactive mode does not require `cursor-agent`) and refuses when preflight is blocking. Refuses BLOCKED, COMPLETED, unknown, and WAITING phases. Marks the selected node RUNNING. Does not invoke Cursor.
 
-**When to use it:** Interactive path after bootstrap; plugin after a verified phase to get the next READY packet. CLI-first users run this in `product_root` after `prdpr <PRD.md>` if they still need a packet. A separate `inspect`/`preflight` CLI call is not required.
+Ordinary execution against the PRD→PR orchestrator repository is refused. `--self-development` opts into a dedicated `SELF_DEVELOPMENT` path. The engine does not infer that mode from the working directory, `.project`, or a PRD title. The PRD must also contain `Execution mode: SELF_DEVELOPMENT`, and the target must be the orchestrator module `github.com/lanternfold/prd-pr`.
 
-**What happens next:** Implement the packet in the current Cursor session, then `verify`. Headless users usually call `run`/`phase` instead.
+**When to use it:** Interactive path after bootstrap; plugin after a verified phase to get the next READY packet. CLI-first users run this in `product_root` after `prdpr <PRD.md>` if they still need a packet. A separate `inspect`/`preflight` CLI call is not required. Use `--self-development` only when deliberately modifying `prd-pr` itself.
+
+**What happens next:** Implement the packet in the current Cursor session, then `verify`. Headless users usually call `run`/`phase` instead. Self-development cannot report success until `prdpr verify` passes.
 
 **Related architecture:** [GRAPH_AND_LOOPS.md](GRAPH_AND_LOOPS.md)
 
@@ -154,13 +156,13 @@ Same as `prdpr bootstrap`.
 
 <a id="run"></a>
 
-## `prdpr run [--prd FILE] [--phase ID] [--worker cursor|fake] [--timeout DURATION] [directory]`
+## `prdpr run [--prd FILE] [--phase ID] [--worker cursor|fake] [--timeout DURATION] [--self-development] [directory]`
 
-**What it does:** Headless: prepare (if needed) + invoke the P4 worker (`cursor-agent` or `fake`). Does **not** verify. `verified_success` stays false.
+**What it does:** Headless: prepare (if needed) + invoke the P4 worker (`cursor-agent` or `fake`). Does **not** verify. `verified_success` stays false. `--self-development` is the same explicit opt-in as `prepare`; without it, the orchestrator repository is refused.
 
 **When to use it:** Scripts/tests and headless implementation of **one** phase. The Cursor plugin must not call this.
 
-**What happens next:** `prdpr verify`. Or use `prdpr phase` to run the inner loop.
+**What happens next:** `prdpr verify`. Or use `prdpr phase` to run the inner loop. Worker completion is not successful self-development.
 
 **Related architecture:** [CURSOR.md](CURSOR.md#headless-cursor-agent)
 
@@ -210,7 +212,7 @@ Same as `prdpr bootstrap`.
 
 <a id="phase"></a>
 
-## `prdpr phase [--prd FILE] [--phase ID] [--worker cursor|fake] [--timeout DURATION] [directory]`
+## `prdpr phase [--prd FILE] [--phase ID] [--worker cursor|fake] [--timeout DURATION] [--self-development] [directory]`
 
 **What it does:** Headless **outer graph walk**: for each READY phase, run the inner loop (worker, verify, review, bounded repair). Stops on human wait, failure, or project complete.
 

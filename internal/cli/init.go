@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/lanternfold/prd-pr/internal/cost"
+	"github.com/lanternfold/prd-pr/internal/engine"
 	"github.com/lanternfold/prd-pr/internal/human"
 	"github.com/lanternfold/prd-pr/internal/state"
 )
@@ -140,4 +141,20 @@ func emptyDash(s string) string {
 		return "-"
 	}
 	return s
+}
+
+func executionMode(selfDevelopment bool) string {
+	if selfDevelopment {
+		return "SELF_DEVELOPMENT"
+	}
+	return ""
+}
+
+func printSelfDev(w io.Writer, ex engine.Execution) {
+	if ex.ExecutionMode != "" {
+		fmt.Fprintf(w, "execution_mode: %s\n", ex.ExecutionMode)
+	}
+	if ex.SelfDevelopment.Status != "" {
+		fmt.Fprintf(w, "self_development_status: %s\n", ex.SelfDevelopment.Status)
+	}
 }

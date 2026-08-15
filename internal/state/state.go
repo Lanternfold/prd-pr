@@ -81,6 +81,15 @@ const (
 	EventRuntimeReady              = "runtime_ready"
 	EventRuntimeFailed             = "runtime_failed"
 	EventRuntimeSkipped            = "runtime_skipped"
+	EventSelfDevelopmentAuthorized = "self_development_authorized"
+	EventSelfDevelopmentRefused    = "self_development_refused"
+
+	ExecutionModeNormal          = "NORMAL"
+	ExecutionModeSelfDevelopment = "SELF_DEVELOPMENT"
+	SelfDevStatusRefused         = "SELF_DEVELOPMENT_REFUSED"
+	SelfDevStatusRunning         = "SELF_DEVELOPMENT_RUNNING"
+	SelfDevStatusCompleted       = "SELF_DEVELOPMENT_COMPLETED"
+	SelfDevStatusFailed          = "SELF_DEVELOPMENT_FAILED"
 
 	BootstrapPending     = "pending"
 	BootstrapPlaced      = "placed"
@@ -143,24 +152,37 @@ const (
 
 // State is the current-project snapshot. It is the source of truth for resume.
 type State struct {
-	SchemaVersion       int        `json:"schema_version"`
-	ProjectID           string     `json:"project_id"`
-	ProductRoot         string     `json:"product_root"`
-	ProjectStatus       string     `json:"project_status"`
-	CurrentRunID        string     `json:"current_run_id"`
-	CurrentPhaseID      string     `json:"current_phase_id"`
-	CurrentState        string     `json:"current_state"`
-	CurrentCommit       string     `json:"current_commit"`
-	LastKnownGoodCommit string     `json:"last_known_good_commit"`
-	PRDPath             string     `json:"prd_path,omitempty"`
-	ProjectType         string     `json:"project_type,omitempty"`
-	ProjectLocation     string     `json:"project_location,omitempty"`
-	StudioCategory      string     `json:"studio_category,omitempty"`
-	Repository          Repository `json:"repository,omitempty"`
-	Bootstrap           Bootstrap  `json:"bootstrap,omitempty"`
-	Runtime             Runtime    `json:"runtime,omitempty"`
-	CreatedAt           string     `json:"created_at"`
-	UpdatedAt           string     `json:"updated_at"`
+	SchemaVersion       int             `json:"schema_version"`
+	ProjectID           string          `json:"project_id"`
+	ProductRoot         string          `json:"product_root"`
+	ProjectStatus       string          `json:"project_status"`
+	CurrentRunID        string          `json:"current_run_id"`
+	CurrentPhaseID      string          `json:"current_phase_id"`
+	CurrentState        string          `json:"current_state"`
+	CurrentCommit       string          `json:"current_commit"`
+	LastKnownGoodCommit string          `json:"last_known_good_commit"`
+	PRDPath             string          `json:"prd_path,omitempty"`
+	ProjectType         string          `json:"project_type,omitempty"`
+	ProjectLocation     string          `json:"project_location,omitempty"`
+	StudioCategory      string          `json:"studio_category,omitempty"`
+	ExecutionMode       string          `json:"execution_mode,omitempty"`
+	SelfDevelopment     SelfDevelopment `json:"self_development,omitempty"`
+	Repository          Repository      `json:"repository,omitempty"`
+	Bootstrap           Bootstrap       `json:"bootstrap,omitempty"`
+	Runtime             Runtime         `json:"runtime,omitempty"`
+	CreatedAt           string          `json:"created_at"`
+	UpdatedAt           string          `json:"updated_at"`
+}
+
+// SelfDevelopment is the persisted P1 self-development authorization and lifecycle record.
+type SelfDevelopment struct {
+	Mode                 string `json:"mode,omitempty"`
+	TargetIdentity       string `json:"target_identity,omitempty"`
+	Authorized           bool   `json:"authorized"`
+	AuthorizationResult  string `json:"authorization_result,omitempty"`
+	ImplementationResult string `json:"implementation_result,omitempty"`
+	VerificationResult   string `json:"verification_result,omitempty"`
+	Status               string `json:"status,omitempty"`
 }
 
 // Bootstrap is resumable PRD-only project placement. It never stores secrets.

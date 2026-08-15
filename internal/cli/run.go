@@ -38,10 +38,11 @@ func runRun(args []string, stdout, stderr io.Writer, rt Runtime) int {
 	}
 
 	res, err := engine.New(engOpts).Run(context.Background(), engine.Request{
-		ProductRoot: opts.root,
-		PRDPath:     opts.prd,
-		PhaseID:     opts.phase,
-		Mode:        preflight.ModeHeadless,
+		ProductRoot:   opts.root,
+		PRDPath:       opts.prd,
+		PhaseID:       opts.phase,
+		Mode:          preflight.ModeHeadless,
+		ExecutionMode: executionMode(opts.selfDevelopment),
 	})
 	if err != nil {
 		printStateErr(stderr, err)
@@ -53,6 +54,7 @@ func runRun(args []string, stdout, stderr io.Writer, rt Runtime) int {
 		fmt.Fprintf(stdout, "invoked: false\n")
 		fmt.Fprintf(stdout, "worker_claimed_success: false\n")
 		fmt.Fprintf(stdout, "verified_success: false\n")
+		printSelfDev(stdout, ex)
 		if ex.PacketRef != "" || fileExists(opts.root, ".project/execution.json") {
 			fmt.Fprintf(stdout, "execution: %s\n", ".project/execution.json")
 		}
@@ -77,6 +79,7 @@ func runRun(args []string, stdout, stderr io.Writer, rt Runtime) int {
 	}
 	fmt.Fprintf(stdout, "execution: %s\n", ".project/execution.json")
 	fmt.Fprintf(stdout, "packet: %s\n", ex.PacketRef)
+	printSelfDev(stdout, ex)
 	if ex.TimedOut {
 		fmt.Fprintln(stderr, "worker timed out")
 		return exitError
@@ -85,24 +88,26 @@ func runRun(args []string, stdout, stderr io.Writer, rt Runtime) int {
 }
 
 type runOpts struct {
-	root    string
-	prd     string
-	phase   prd.PhaseID
-	worker  string
-	timeout time.Duration
+	root            string
+	prd             string
+	phase           prd.PhaseID
+	worker          string
+	timeout         time.Duration
+	selfDevelopment bool
 }
 
 func parseRunArgs(args []string) (runOpts, error) {
 	opts := runOpts{worker: "cursor", timeout: cursor.DefaultTimeout}
 	var positional []string
+	usage := "usage: prdpr run [--prd FILE] [--phase ID] [--worker cursor|fake] [--timeout DURATION] [--self-development] [directory]"
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
 		case a == "-h" || a == "--help":
-			return runOpts{}, fmt.Errorf("usage: prdpr run [--prd FILE] [--phase ID] [--worker cursor|fake] [--timeout DURATION] [directory]\n%s", docsHint("run"))
+			return runOpts{}, fmt.Errorf("%s\n%s", usage, docsHint("run"))
 		case a == "--prd":
 			if i+1 >= len(args) {
-				return runOpts{}, fmt.Errorf("usage: prdpr run [--prd FILE] [--phase ID] [--worker cursor|fake] [--timeout DURATION] [directory]")
+				return runOpts{}, fmt.Errorf("%s", usage)
 			}
 			i++
 			opts.prd = args[i]
@@ -148,8 +153,10 @@ func parseRunArgs(args []string) (runOpts, error) {
 				return runOpts{}, fmt.Errorf("invalid --timeout: %w", err)
 			}
 			opts.timeout = d
+		case a == "--self-development":
+			opts.selfDevelopment = true
 		case strings.HasPrefix(a, "-"):
-			return runOpts{}, fmt.Errorf("unknown flag %q\nusage: prdpr run [--prd FILE] [--phase ID] [--worker cursor|fake] [--timeout DURATION] [directory]", a)
+			return runOpts{}, fmt.Errorf("unknown flag %q\n%s", a, usage)
 		default:
 			positional = append(positional, a)
 		}

@@ -151,6 +151,7 @@ func (e *Engine) persistVerify(ctx context.Context, g *state.Guard, st state.Sta
 		if vres.Timestamp != "" {
 			ex.RecordedAt = vres.Timestamp
 		}
+		applySelfDevVerification(&ex, &st, vres)
 		_ = writeExecution(g, ex)
 		if ex.RepairAttempt > 0 {
 			inc := loadIncident(root)

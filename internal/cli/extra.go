@@ -105,7 +105,11 @@ func runPhase(args []string, stdout, stderr io.Writer, rt Runtime) int {
 		return exitUsage
 	}
 	res, err := engine.New(engOpts).RunGraph(context.Background(), engine.Request{
-		ProductRoot: opts.root, PRDPath: opts.prd, PhaseID: opts.phase, Mode: preflight.ModeHeadless,
+		ProductRoot:   opts.root,
+		PRDPath:       opts.prd,
+		PhaseID:       opts.phase,
+		Mode:          preflight.ModeHeadless,
+		ExecutionMode: executionMode(opts.selfDevelopment),
 	})
 	if err != nil {
 		printStateErr(stderr, err)

@@ -91,7 +91,7 @@ build prdpr
 → inspect product Git history and .project/
 ```
 
-Self-repo is refused as a product workspace unless `AllowSelf` (tests).
+Self-repo is refused as a product workspace unless the caller uses explicit `SELF_DEVELOPMENT` (`prdpr prepare --self-development` plus `Execution mode: SELF_DEVELOPMENT` in the PRD) or `AllowSelf` (tests). Ordinary `prdpr prepare`/`run`/`phase` against this repository still refuse.
 
 ## G. How to modify PRD→PR
 

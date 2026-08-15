@@ -253,3 +253,15 @@ See the table above. Runtime defaults are `config.Defaults()`. CLI commands that
 | Headless | `prdpr phase` | `cursor-agent` subprocess | `Engine.RunGraph` walks READY phases in one process |
 
 Do not call `prdpr run` or `prdpr phase` from the plugin (nested Cursor is forbidden).
+
+## Self-development (this repository)
+
+Ordinary `prdpr prepare` / `run` / `phase` against the PRD→PR orchestrator repository is refused. That guard is unchanged.
+
+To modify `prd-pr` through the engine, all of the following are required:
+
+1. Pass `--self-development` on the execution request (`prepare`, `run`, or `phase`).
+2. Include an explicit `Execution mode: SELF_DEVELOPMENT` line in the PRD (a title mention is not enough).
+3. Target the current orchestrator checkout (`module github.com/lanternfold/prd-pr` in `go.mod`).
+
+The dedicated path records mode, repository identity, authorization, implementation, and verification in `.project/`. Worker completion is not success; `prdpr verify` must pass before self-development is marked completed.
