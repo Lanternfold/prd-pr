@@ -22,7 +22,7 @@ Local config: CLI uses `config.Defaults()`. There is no implemented YAML loader.
 
 Git identity must be set for tests that commit.
 
-Cursor: symlink `prdpr-cursor` as in [CURSOR.md](CURSOR.md).
+Cursor: copy `prdpr-cursor` as in [CURSOR.md](CURSOR.md). Plugin runtime still requires `prdpr` on `PATH`.
 
 ## B. Repository architecture
 
@@ -74,7 +74,7 @@ Use headless for automation and tests (`--worker fake`). Use interactive when a 
 
 ## E. Cursor plugin build
 
-Implemented: files under `prdpr-cursor/` (manifest, `commands/prdpr.md`, `skills/prdpr/SKILL.md`). Local symlink install. Binary resolution: `prdpr` on PATH, else workspace `dist/prdpr`.
+Implemented: files under `prdpr-cursor/` (manifest, `commands/prdpr.md`, `skills/prdpr/SKILL.md`). Local copy-install into `~/.cursor/plugins/local/prdpr`. Binary resolution: `prdpr` on PATH only (no `<workspace>/dist/prdpr` fallback). Compatible CLI: released **v0.1.1**.
 
 Testing plugin changes: follow the skill against a fixture product; engine tests cover CLI. No Marketplace package pipeline (**PLANNED**).
 
@@ -163,12 +163,12 @@ go test ./...
 go build -o dist/prdpr ./cmd/prdpr
 ```
 
-`go install ./cmd/prdpr` is a source/developer install into Go’s bin directory and reports `prdpr version` as `dev`. `go install github.com/lanternfold/prd-pr/cmd/prdpr@v0.1.0` reports `0.1.0` from Go module build info. GitHub Release binaries report `0.1.0` via `-ldflags`.
+`go install ./cmd/prdpr` is a source/developer install into Go’s bin directory and reports `prdpr version` as `dev`. `go install github.com/lanternfold/prd-pr/cmd/prdpr@v0.1.1` reports `0.1.1` from Go module build info. GitHub Release binaries report `0.1.1` via `-ldflags`.
 
 **Release builds** inject the version at link time:
 
 ```bash
-go build -ldflags "-X github.com/lanternfold/prd-pr/internal/cli.Version=0.1.0" ./cmd/prdpr
+go build -ldflags "-X github.com/lanternfold/prd-pr/internal/cli.Version=0.1.1" ./cmd/prdpr
 ```
 
 The same injection is used by `scripts/build-release.sh`. Artifact names:
@@ -179,23 +179,23 @@ The same injection is used by `scripts/build-release.sh`. Artifact names:
 - `prdpr_<version>_linux_amd64`
 - `prdpr_<version>_checksums.txt`
 
-Example for v0.1.0: `prdpr_0.1.0_darwin_arm64`.
+Example for v0.1.1: `prdpr_0.1.1_darwin_arm64`.
 
 **GitHub Releases** are published by `.github/workflows/release.yml` when a version tag matching `v*` is pushed (validated as `vMAJOR.MINOR.PATCH`). The workflow builds those four binaries, writes checksums, and creates a GitHub Release. It uses the default `GITHUB_TOKEN` (`contents: write`). No extra secrets.
 
-The first release version is **v0.1.0**. Do not create or push that tag until the release workflow is reviewed and merged to the default branch. After that:
+The current published release is **v0.1.1**. Cut the next tag only after `ci` / `test` is green:
 
 1. Release only a commit whose `ci` / `test` job is already green.
-2. `git tag v0.1.0 <commit>`
-3. `git push origin v0.1.0`
+2. `git tag vMAJOR.MINOR.PATCH <commit>`
+3. `git push origin vMAJOR.MINOR.PATCH`
 
-Do not document a specific release download URL until that tag exists.
+Do not document a specific download URL for a tag that does not exist yet. v0.1.1 is live at https://github.com/Lanternfold/prd-pr/releases/tag/v0.1.1
 
 Local check of the release build (does not publish):
 
 ```bash
-./scripts/build-release.sh 0.1.0
-./dist/release/prdpr_0.1.0_$(go env GOOS)_$(go env GOARCH) version
+./scripts/build-release.sh 0.1.1
+./dist/release/prdpr_0.1.1_$(go env GOOS)_$(go env GOARCH) version
 ```
 
 **IMPLEMENTED:** tagged GitHub Releases (`.github/workflows/release.yml` on `v*` tags).

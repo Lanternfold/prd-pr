@@ -27,23 +27,17 @@ The human is an **exception handler**: unresolved product decisions, missing cre
 
 ## Quick start
 
-**v0.1.0 is not published yet.** Until a GitHub Release exists, install from a clone. Released binaries will become the normal-user installation path once v0.1.0 exists.
-
-The primary input is a PRD:
+The current published release is **v0.1.1**. Install that binary, put `prdpr` on `PATH`, then pass a PRD:
 
 ```bash
-git clone https://github.com/lanternfold/prd-pr
-cd prd-pr
-go install ./cmd/prdpr
+prdpr version   # 0.1.1
 prdpr doctor
 prdpr path/to/PRD.md
 ```
 
-`go install` writes `prdpr` to `$GOBIN` if set, otherwise `$GOPATH/bin` (default `$HOME/go/bin`). Add that directory to `PATH` if the shell cannot find `prdpr`.
-
 `prdpr <PRD.md>` and `prdpr bootstrap <PRD.md>` are the same PRD-only entry. The engine validates the PRD as part of that command. Do not start by creating a product directory by hand.
 
-Optional diagnostic (no project mutation):
+Optional diagnostic (no project mutation; not required before the product command):
 
 ```bash
 prdpr validate-prd path/to/PRD.md
@@ -53,11 +47,25 @@ prdpr validate-prd path/to/PRD.md
 
 ### Released binary (normal users)
 
-The first versioned release will be **v0.1.0**. It is not published yet.
+Current release: **[v0.1.1](https://github.com/Lanternfold/prd-pr/releases/tag/v0.1.1)**.
 
-After a GitHub Release exists, download the `prdpr` artifact that matches your OS and architecture, verify it against the release checksums file, and put the binary on your `PATH`. Then run `prdpr version` and `prdpr doctor`.
+1. Download the `prdpr` artifact that matches your OS and architecture (`prdpr_0.1.1_darwin_arm64`, `prdpr_0.1.1_darwin_amd64`, `prdpr_0.1.1_linux_arm64`, or `prdpr_0.1.1_linux_amd64`).
+2. Download `prdpr_0.1.1_checksums.txt` from the same release and verify the artifact.
+3. Install the file as `prdpr` on your `PATH` (for example `$HOME/.local/bin/prdpr`) and mark it executable.
+4. Run `prdpr version` (expect `0.1.1`) and `prdpr doctor`.
 
-Until that release exists, use the clone + `go install ./cmd/prdpr` path in Quick Start.
+Example (macOS Apple Silicon):
+
+```bash
+mkdir -p "$HOME/.local/bin"
+# download prdpr_0.1.1_darwin_arm64 and prdpr_0.1.1_checksums.txt from the release
+shasum -a 256 -c prdpr_0.1.1_checksums.txt --ignore-missing
+install -m 0755 prdpr_0.1.1_darwin_arm64 "$HOME/.local/bin/prdpr"
+export PATH="$HOME/.local/bin:$PATH"
+prdpr version
+```
+
+Add `$HOME/.local/bin` to your shell `PATH` if it is not already there.
 
 ### Install from source
 
@@ -67,7 +75,7 @@ Requires Go (version in `go.mod`) and Git. From a clone of this repository:
 go install ./cmd/prdpr
 ```
 
-`go install` writes `prdpr` to `$GOBIN` if set, otherwise `$GOPATH/bin` (default `$HOME/go/bin`). Add that directory to `PATH` if the shell cannot find `prdpr`. A checkout install (`go install ./cmd/prdpr`) reports `dev`. A tagged module install (`go install github.com/lanternfold/prd-pr/cmd/prdpr@v0.1.0`) and GitHub Release binaries report `0.1.0`.
+`go install` writes `prdpr` to `$GOBIN` if set, otherwise `$GOPATH/bin` (default `$HOME/go/bin`). Add that directory to `PATH` if the shell cannot find `prdpr`. A checkout install (`go install ./cmd/prdpr`) reports `dev`. A tagged module install (`go install github.com/lanternfold/prd-pr/cmd/prdpr@v0.1.1`) and GitHub Release binaries report `0.1.1`.
 
 ### Contributor / developer build
 
@@ -114,16 +122,25 @@ Default config has `GitHubEnabled=false`. Local commits still happen after verif
 
 When you enable GitHub (today: inject `config.Config` in code/tests; **YAML/env config loading is PARTIAL / not a user CLI**), the engine can create a remote, push, and open a milestone PR. Auto-merge stays off unless you set `AutoMergeEnabled`.
 
-### Cursor plugin
+### Cursor plugin (V0)
+
+The plugin is a thin adapter. It requires **released `prdpr` on `PATH`**. It does not require a PRD→PR source checkout and must not use `<workspace>/dist/prdpr`.
 
 See [CURSOR.md](CURSOR.md) and [prdpr-cursor/README.md](../prdpr-cursor/README.md).
 
+1. Install `prdpr` v0.1.1 on `PATH` (above).
+2. Copy the `prdpr-cursor/` directory to `~/.cursor/plugins/local/prdpr` (prefer copy over a symlink whose target is outside that folder):
+
 ```bash
 mkdir -p ~/.cursor/plugins/local
-ln -sfn /absolute/path/to/prd-pr/prdpr-cursor ~/.cursor/plugins/local/prdpr
+rm -rf ~/.cursor/plugins/local/prdpr
+cp -R /path/to/prdpr-cursor ~/.cursor/plugins/local/prdpr
 ```
 
-Reload Cursor. Marketplace packaging is **PLANNED**.
+3. Reload Cursor if `/prdpr` does not appear. Enable the plugin in **Customize** if needed.
+4. Run `/prdpr`.
+
+Marketplace packaging is **PLANNED** (not V0).
 
 ### Cursor Auto-review
 
@@ -168,16 +185,26 @@ Environment that **is** implemented:
 
 ## First run
 
-Example, interactive:
+There are two supported workflows. Both use the same engine. Do not mix either with headless `prdpr phase` in the same session.
+
+### CLI-first
 
 1. Author `~/Inbox/my-product.md` to the [PRD contract](PRD_AUTHORING_CONTRACT.md).
-2. Optionally `prdpr validate-prd ~/Inbox/my-product.md` to inspect the contract without creating a project. If REJECTED, edit the PRD. This step is diagnostic; it is not required before the product command.
-3. `prdpr ~/Inbox/my-product.md` — engine validates the PRD, selects project type, creates `…/Products/<slug>/` when needed, copies `PRD.md`, writes `.project/`, Cursor rules, Git baseline, optional GitHub, then **prepare** (packet on disk).
-4. Open that product directory in Cursor. `/prdpr` (or continue in CLI) implements **only the packet**.
+2. Optionally `prdpr validate-prd ~/Inbox/my-product.md` to inspect the contract without creating a project. If REJECTED, edit the PRD. This step is diagnostic; it is not required.
+3. `prdpr ~/Inbox/my-product.md` — engine validates the PRD, selects project type, creates `…/Products/<slug>/` when needed, copies `PRD.md`, writes `.project/`, Cursor rules, Git baseline, optional GitHub, then **prepare** (packet on disk). `prepare` internally runs preflight and may refuse if it is blocking. A separate `inspect` / `preflight` CLI call is optional.
+4. Open that product directory in Cursor. `/prdpr` (or `prdpr prepare` if a packet is not already printed) implements **only the packet** in this session.
 5. Engine `prdpr verify` runs tests. Worker “done” is ignored.
 6. On failure: `review` → maybe `repair` (max 3 product attempts) → verify again.
-7. On verified success: engine commits (default). If GitHub is enabled, it pushes and may open a PR. Then the next READY phase is prepared (plugin) or walked (`prdpr phase`).
+7. On verified success: engine commits (default). If GitHub is enabled, it pushes and may open a PR. Then the next READY phase is prepared (plugin `prdpr prepare` without `--phase`) or walked headless (`prdpr phase`).
 8. When the graph is fully COMPLETED, `prdpr runtime` starts a structured local runtime if the project type has one.
+
+### Cursor-plugin-first
+
+1. Install `prdpr` v0.1.1 on `PATH` and load the plugin ([Cursor plugin](#cursor-plugin-v0)).
+2. Open a folder that contains `PRD.md`, or be ready to supply a PRD path.
+3. Run `/prdpr`. The plugin resolves `prdpr` on `PATH` only. Optional `validate-prd`, then `prdpr <PRD>` if this workspace is not yet the product.
+4. If the engine prints a `product_root` that is not the current workspace, open that directory in Cursor and run `/prdpr` again. Implementation must happen in the product tree.
+5. The same session reads the `packet:` JSON on disk, implements only that packet, then `prdpr verify`, with engine-driven review/repair and later `prepare` calls as above.
 
 What you should see: printed `product_root`, `packet:` path, `verified_success: true|false`, and occasionally `waiting_for_human`. You should not see the plugin spawn another Cursor.
 
@@ -222,7 +249,7 @@ See the table above. Runtime defaults are `config.Defaults()`. CLI commands that
 
 | Path | Entry | Implementation actor | Graph walk |
 |---|---|---|---|
-| Interactive | `/prdpr` or `prdpr <PRD.md>` then implement in this session | Current Cursor session | Plugin calls `prepare` again after each verified phase |
+| Interactive | CLI-first `prdpr <PRD.md>` then `/prdpr`, or plugin-first `/prdpr` | Current Cursor session | Plugin calls `prepare` again after each verified phase |
 | Headless | `prdpr phase` | `cursor-agent` subprocess | `Engine.RunGraph` walks READY phases in one process |
 
 Do not call `prdpr run` or `prdpr phase` from the plugin (nested Cursor is forbidden).
