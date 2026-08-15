@@ -46,9 +46,11 @@ Authors should include, or explicitly mark as not applicable:
 ## Gate
 
 ```text
-PRD → prdpr validate-prd → VALID → prdpr <PRD.md> bootstrap / prepare / implementation
-PRD → prdpr validate-prd → REJECTED → STOP → human updates PRD → validate again
+PRD → prdpr <PRD.md> (engine contract gate) → VALID → bootstrap / prepare / implementation
+PRD → engine contract REJECTED → STOP → human updates PRD → retry
 ```
+
+`prdpr validate-prd <PRD.md>` is the same gate with no project mutation. It is optional. The engine still applies this gate inside `prdpr <PRD.md>` and `prdpr prepare`.
 
 `prdpr <PRD.md>` is the PRD-only entry. Studio placement uses `PRDPR_STUDIO` or a discovered Studio layout (`Tools/`, `Products/`, …), not a hardcoded personal path.
 
