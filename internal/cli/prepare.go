@@ -13,7 +13,7 @@ import (
 func runPrepare(args []string, stdout, stderr io.Writer, rt Runtime) int {
 	for _, a := range args {
 		if a == "-h" || a == "--help" {
-			fmt.Fprintln(stdout, "Usage: prdpr prepare [--prd FILE] [--phase ID] [directory]")
+			fmt.Fprintln(stdout, "Usage: prdpr prepare [--prd FILE] [--phase ID] [--self-development] [directory]")
 			fmt.Fprintln(stdout, docsHint("prepare"))
 			return exitOK
 		}
@@ -29,9 +29,10 @@ func runPrepare(args []string, stdout, stderr io.Writer, rt Runtime) int {
 
 	engOpts := engine.Options{Now: rt.Now, PreflightEnv: preflightEnv(rt)}
 	res, err := engine.New(engOpts).Prepare(context.Background(), engine.Request{
-		ProductRoot: opts.root,
-		PRDPath:     opts.prd,
-		PhaseID:     opts.phase,
+		ProductRoot:   opts.root,
+		PRDPath:       opts.prd,
+		PhaseID:       opts.phase,
+		ExecutionMode: executionMode(opts.selfDevelopment),
 	})
 	if err != nil {
 		printStateErr(stderr, err)
@@ -55,6 +56,7 @@ func runPrepare(args []string, stdout, stderr io.Writer, rt Runtime) int {
 		fmt.Fprintf(stdout, "prepared: false\n")
 		fmt.Fprintf(stdout, "invoked: false\n")
 		fmt.Fprintf(stdout, "verified_success: false\n")
+		printSelfDev(stdout, ex)
 		if fileExists(opts.root, ".project/execution.json") {
 			fmt.Fprintf(stdout, "execution: %s\n", ".project/execution.json")
 		}
@@ -70,21 +72,23 @@ func runPrepare(args []string, stdout, stderr io.Writer, rt Runtime) int {
 	fmt.Fprintf(stdout, "execution: %s\n", ".project/execution.json")
 	fmt.Fprintf(stdout, "invoked: false\n")
 	fmt.Fprintf(stdout, "worker_claimed_success: false\n")
-	fmt.Fprintf(stdout, "verified_success: false\n")
+	fmt.Fprintf(stdout, "verified_success: %t\n", ex.VerifiedSuccess)
 	fmt.Fprintf(stdout, "current_state: PREPARED\n")
+	printSelfDev(stdout, ex)
 	return exitOK
 }
 
 type prepareOpts struct {
-	root  string
-	prd   string
-	phase prd.PhaseID
+	root            string
+	prd             string
+	phase           prd.PhaseID
+	selfDevelopment bool
 }
 
 func parsePrepareArgs(args []string) (prepareOpts, error) {
 	var opts prepareOpts
 	var positional []string
-	usage := "usage: prdpr prepare [--prd FILE] [--phase ID] [directory]"
+	usage := "usage: prdpr prepare [--prd FILE] [--phase ID] [--self-development] [directory]"
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
@@ -114,6 +118,8 @@ func parsePrepareArgs(args []string) (prepareOpts, error) {
 				return prepareOpts{}, err
 			}
 			opts.phase = id
+		case a == "--self-development":
+			opts.selfDevelopment = true
 		case strings.HasPrefix(a, "-"):
 			return prepareOpts{}, fmt.Errorf("unknown flag %q\n%s", a, usage)
 		default:

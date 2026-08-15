@@ -177,6 +177,6 @@ Historical plan IDs (old P14–P16 in an earlier plan draft) are **retired**. Se
 
 **Purpose.** Orchestrator can run the loop on a **fixture** product.
 
-**Status.** PARTIAL: `internal/engine/dogfood_test.go` and fixture PRDs. Self-modification of `prd-pr` is refused (`AllowSelf` false by default).
+**Status.** PARTIAL: `internal/engine/dogfood_test.go` and fixture PRDs. Ordinary self-modification of `prd-pr` is refused. Explicit `SELF_DEVELOPMENT` is a dedicated opt-in path (`--self-development` + PRD declaration + orchestrator identity). `AllowSelf` remains tests-only.
 
 **Limits.** Broad dogfood of this repo is out of scope for this documentation pass.

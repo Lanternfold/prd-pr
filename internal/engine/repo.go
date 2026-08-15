@@ -15,7 +15,7 @@ import (
 	"github.com/lanternfold/prd-pr/internal/vcs"
 )
 
-func (e *Engine) ensureWorkspace(ctx context.Context, productRoot string) (string, *fsguard.Jail, error) {
+func (e *Engine) ensureWorkspace(ctx context.Context, productRoot string, selfDev bool) (string, *fsguard.Jail, error) {
 	if strings.TrimSpace(productRoot) == "" {
 		return "", nil, fmt.Errorf("product root is empty")
 	}
@@ -24,7 +24,7 @@ func (e *Engine) ensureWorkspace(ctx context.Context, productRoot string) (strin
 		return "", nil, err
 	}
 	abs = filepath.Clean(abs)
-	if !e.opts.AllowSelf && isOrchestratorRepo(abs) {
+	if !e.opts.AllowSelf && !selfDev && isOrchestratorRepo(abs) {
 		return "", nil, fmt.Errorf("refusing to use the PRD→PR orchestrator repository as a product workspace")
 	}
 	if _, err := os.Stat(abs); os.IsNotExist(err) {
@@ -80,8 +80,8 @@ func (e *Engine) repoIdentity(doc *prd.Document) (owner, name string) {
 	return owner, name
 }
 
-func (e *Engine) bootstrapRepo(ctx context.Context, g *state.Guard, st state.State, root string, doc *prd.Document, prdOnly bool) (state.State, error) {
-	if !e.opts.AllowSelf && isOrchestratorRepo(root) {
+func (e *Engine) bootstrapRepo(ctx context.Context, g *state.Guard, st state.State, root string, doc *prd.Document, prdOnly bool, selfDev bool) (state.State, error) {
+	if !e.opts.AllowSelf && !selfDev && isOrchestratorRepo(root) {
 		return st, fmt.Errorf("refusing to bootstrap the PRD→PR orchestrator repository")
 	}
 	cfg := e.cfg()

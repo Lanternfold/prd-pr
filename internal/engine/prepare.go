@@ -27,17 +27,24 @@ func (e *Engine) Prepare(ctx context.Context, req Request) (Result, error) {
 	if req.Mode == "" {
 		req.Mode = preflight.ModeInteractive
 	}
+	if DeclaredSelfDevelopment(req.ExecutionMode) {
+		return e.prepareSelfDevelopment(ctx, req)
+	}
 	if blocked, res := e.refuseSelfRepo(req.ProductRoot); blocked {
 		return res, nil
 	}
+	return e.prepareProduct(ctx, req, false)
+}
+
+func (e *Engine) prepareProduct(ctx context.Context, req Request, selfDev bool) (Result, error) {
 	if blocked, res := e.contractGate(req); blocked {
 		return res, nil
 	}
-	root, _, err := e.ensureWorkspace(ctx, req.ProductRoot)
+	root, _, err := e.ensureWorkspace(ctx, req.ProductRoot, selfDev)
 	if err != nil {
 		return refused("", err.Error()), nil
 	}
-	if !e.opts.AllowSelf && isOrchestratorRepo(root) {
+	if !e.opts.AllowSelf && !selfDev && isOrchestratorRepo(root) {
 		return refused(root, "refusing to prepare a coding task against the PRD→PR orchestrator repository"), nil
 	}
 
@@ -62,10 +69,10 @@ func (e *Engine) Prepare(ctx context.Context, req Request) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	return e.prepareLocked(ctx, g, st, req, root)
+	return e.prepareLocked(ctx, g, st, req, root, selfDev)
 }
 
-func (e *Engine) prepareLocked(ctx context.Context, g *state.Guard, st state.State, req Request, root string) (Result, error) {
+func (e *Engine) prepareLocked(ctx context.Context, g *state.Guard, st state.State, req Request, root string, selfDev bool) (Result, error) {
 	prdPath := req.PRDPath
 	if prdPath == "" {
 		prdPath = filepath.Join(root, "PRD.md")
@@ -76,7 +83,7 @@ func (e *Engine) prepareLocked(ctx context.Context, g *state.Guard, st state.Sta
 		doc = parsed
 	}
 	var err error
-	st, err = e.bootstrapRepo(ctx, g, st, root, doc, req.PRDOnly)
+	st, err = e.bootstrapRepo(ctx, g, st, root, doc, req.PRDOnly, selfDev)
 	if err != nil {
 		return e.persistPrepareRefusal(g, st, root, "", "repository bootstrap: "+err.Error())
 	}

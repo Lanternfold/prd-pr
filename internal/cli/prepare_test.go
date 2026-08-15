@@ -86,3 +86,51 @@ func prepareFixture(t *testing.T) string {
 	git("commit", "-m", "init")
 	return root
 }
+
+func TestPrepareCLISelfDevelopmentFlag(t *testing.T) {
+	root := t.TempDir()
+	src, err := os.ReadFile(filepath.Join("..", "prd", "testdata", "prd", "auto_verify.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	prdBody := []byte(strings.Replace(string(src), "**Repository:** example/fixture\n", "**Repository:** example/fixture\n\nExecution mode: SELF_DEVELOPMENT\n", 1))
+	if err := os.WriteFile(filepath.Join(root, "PRD.md"), prdBody, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module github.com/lanternfold/prd-pr\n\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "--template=")
+	git("config", "user.email", "test@example.com")
+	git("config", "user.name", "Test")
+	git("add", ".")
+	git("commit", "-m", "init")
+
+	stdout, stderr := new(bytes.Buffer), new(bytes.Buffer)
+	code := Main([]string{"prdpr", "prepare", "--phase", "P1", root}, stdout, stderr, testRuntime())
+	if code != exitError {
+		t.Fatalf("ordinary prepare must refuse orchestrator: exit %d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "orchestrator") {
+		t.Fatalf("stderr=%q", stderr.String())
+	}
+
+	stdout, stderr = new(bytes.Buffer), new(bytes.Buffer)
+	code = Main([]string{"prdpr", "prepare", "--self-development", "--phase", "P1", root}, stdout, stderr, testRuntime())
+	if code != exitOK {
+		t.Fatalf("self-development prepare exit %d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "prepared: true") || !strings.Contains(out, "execution_mode: SELF_DEVELOPMENT") {
+		t.Fatalf("stdout=%q", out)
+	}
+}

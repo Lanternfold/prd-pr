@@ -25,7 +25,7 @@ phase graph                       IMPLEMENTED
  ↓
 READY phase                       IMPLEMENTED (explicit --phase cannot bypass READY)
  ↓
-prepare packet                    IMPLEMENTED
+prepare packet                    IMPLEMENTED (ordinary orchestrator target refused; explicit SELF_DEVELOPMENT is a separate path)
  ↓
 Cursor implementation             IMPLEMENTED (plugin session XOR cursor-agent)
  ↓
