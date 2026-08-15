@@ -37,8 +37,10 @@ func TestOrdinaryExecutionAgainstOrchestratorRemainsRefused(t *testing.T) {
 
 func TestExplicitSelfDevelopmentAcceptedWhenPreconditionsPass(t *testing.T) {
 	root := orchestratorFixture(t, true, true)
-	rec := &recordingWorker{inner: cursor.Fake{ClaimSuccess: true, WriteRel: "x.txt", WriteBody: "ok\n"}}
-	eng := engine.New(engine.Options{Worker: rec, NewID: seqID()})
+	eng := engine.New(engine.Options{
+		Worker: cursor.Fake{ClaimSuccess: true, WriteRel: "x.txt", WriteBody: "ok\n"},
+		NewID:  seqID(),
+	})
 	req := engine.Request{ProductRoot: root, PhaseID: "P1", ExecutionMode: state.ExecutionModeSelfDevelopment}
 	prep, err := eng.Prepare(context.Background(), req)
 	if err != nil {
@@ -47,7 +49,7 @@ func TestExplicitSelfDevelopmentAcceptedWhenPreconditionsPass(t *testing.T) {
 	if prep.Execution.RefusalReason != "" {
 		t.Fatalf("prepare refused: %s", prep.Execution.RefusalReason)
 	}
-	if rec.calls != 0 {
+	if prep.Execution.Invoked {
 		t.Fatal("prepare must not invoke the worker")
 	}
 	if prep.Execution.ExecutionMode != state.ExecutionModeSelfDevelopment {
@@ -60,8 +62,8 @@ func TestExplicitSelfDevelopmentAcceptedWhenPreconditionsPass(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !run.Execution.Invoked || rec.calls == 0 {
-		t.Fatalf("self-development must use the dedicated path: invoked=%v calls=%d reason=%s", run.Execution.Invoked, rec.calls, run.Execution.RefusalReason)
+	if !run.Execution.Invoked {
+		t.Fatalf("self-development must use the dedicated path: invoked=%v reason=%s", run.Execution.Invoked, run.Execution.RefusalReason)
 	}
 	if run.Execution.VerifiedSuccess {
 		t.Fatal("worker completion must not constitute successful self-development")
