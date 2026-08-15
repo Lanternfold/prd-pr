@@ -12,6 +12,8 @@ The PRD lists MCP platforms, databases, queues, vector DBs, and extra agents as 
 
 V1 uses direct integrations (`git`, `gh`, Cursor CLI, LLM HTTP) and filesystem state (ADR-002). No MCP servers, no SQL/vector database, no message queue, no cloud orchestrator.
 
+A Cursor **plugin** as primary UX (ADR-012) is not MCP. Plugin V0 must not add MCP.
+
 ## Consequences
 
 Each integration is a small adapter. There is no generic plugin bus. Knowledge search is files + ripgrep/substring.

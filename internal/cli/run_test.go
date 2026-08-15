@@ -46,7 +46,11 @@ func TestRunFakeWorker(t *testing.T) {
 	}
 }
 
-func TestRunRefusesNonRepo(t *testing.T) {
+func TestRunBootstrapsNonRepo(t *testing.T) {
+	t.Setenv("GIT_AUTHOR_NAME", "Test")
+	t.Setenv("GIT_AUTHOR_EMAIL", "test@example.com")
+	t.Setenv("GIT_COMMITTER_NAME", "Test")
+	t.Setenv("GIT_COMMITTER_EMAIL", "test@example.com")
 	root := t.TempDir()
 	src, err := os.ReadFile(filepath.Join("..", "prd", "testdata", "prd", "minimal_valid.md"))
 	if err != nil {
@@ -56,14 +60,14 @@ func TestRunRefusesNonRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 	stdout, stderr := new(bytes.Buffer), new(bytes.Buffer)
-	code := Main([]string{"prdpr", "run", "--worker", "fake", root}, stdout, stderr, testRuntime())
-	if code != exitError {
-		t.Fatalf("exit %d", code)
+	code := Main([]string{"prdpr", "run", "--worker", "fake", "--phase", "P1", root}, stdout, stderr, testRuntime())
+	if code != exitOK {
+		t.Fatalf("exit %d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
 	}
-	if !strings.Contains(stderr.String(), "refused:") {
-		t.Fatalf("stderr=%q", stderr.String())
+	if !strings.Contains(stdout.String(), "invoked: true") {
+		t.Fatalf("stdout=%q", stdout.String())
 	}
 	if strings.Contains(stdout.String(), "verified_success: true") {
-		t.Fatalf("stdout=%q", stdout.String())
+		t.Fatalf("run must not verify: %q", stdout.String())
 	}
 }

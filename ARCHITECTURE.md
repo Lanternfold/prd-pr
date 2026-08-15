@@ -1,18 +1,21 @@
 # ARCHITECTURE: PRD→PR
 
-**Status:** Draft v1  
+**Status:** Design intent (historical + accepted RADs). Not a runtime status report.  
 **Product:** PRD→PR  
 **Companion to:** `PRD.md` (Draft v1)  
-**Constraint:** Local-first single Go binary. No SaaS, no cloud orchestrator, no MCP, no database, no message queue.
+**Implemented behavior:** [`docs/FLOW.md`](docs/FLOW.md), [`docs/GRAPH_AND_LOOPS.md`](docs/GRAPH_AND_LOOPS.md), [`docs/PHASES.md`](docs/PHASES.md), [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md)  
+**Constraint:** Local-first Go **core engine**. Primary UX is a thin Cursor plugin (ADR-012). The engine remains independently executable without Cursor IDE. No SaaS, no cloud orchestrator, no MCP, no database, no message queue.
 
-This document describes how PRD→PR will be built. It does not change product requirements. Accepted review decisions are under [Resolved Architectural Decisions](#resolved-architectural-decisions). Remaining underspecification is under [Open Architectural Questions](#open-architectural-questions).
+This document describes how PRD→PR was designed. Several sections still describe **target** loops (for example §5 `prdpr run PRD.md` as a full product loop, YAML config search order, `pause`/`retry`/`logs` CLI). Those are **not all implemented**. Do not cite this file as proof a feature ships.
+
+Accepted review decisions are under [Resolved Architectural Decisions](#resolved-architectural-decisions). Remaining underspecification is under [Open Architectural Questions](#open-architectural-questions).
 
 ---
 
 ## 1. Architectural principles
 
 1. **Deterministic before probabilistic.** Git, DAGs, schemas, tests, CI, and the filesystem are the source of truth. LLMs propose; the orchestrator verifies.
-2. **One process, one machine.** V1 is a single Go CLI on the user’s Mac. Integrations are subprocesses and HTTP APIs (`git`, `gh`, Cursor CLI, LLM APIs), not services.
+2. **One engine process, one machine.** V1 core is a single Go binary on the user’s Mac. The Cursor plugin is a thin adapter that invokes that engine (ADR-012). Integrations are subprocesses and HTTP APIs (`git`, `gh`, Cursor CLI, LLM APIs), not services. The core engine must not require Cursor IDE to be installed.
 3. **State is structured.** Resume, rewind, and learning never depend on parsing natural-language logs.
 4. **Verify independently.** An implementation worker reporting “done” is not completion. Files, Git, tests, CI, and acceptance criteria are.
 5. **Repair at the origin.** Diagnose, then repair, rewind, or re-plan. Do not blindly retry.
@@ -25,7 +28,7 @@ This document describes how PRD→PR will be built. It does not change product r
 
 ## Resolved Architectural Decisions
 
-These five decisions were accepted in architecture review. They override earlier defaults in this document and close the related open questions. Full write-ups live in `ADR/`.
+These six decisions were accepted in architecture review. They override earlier defaults in this document and close the related open questions. Full write-ups live in `ADR/`.
 
 ### RAD-1. Three-attempt rule (ADR-006)
 
@@ -51,6 +54,10 @@ Model Router → LLM Adapter → configured model/provider
 
 The orchestrator may use different models for planning, architecture, review, diagnosis, test generation, learning, and other reasoning. The router picks the cheapest capable model from task, complexity, risk, context, budget, and historical performance. **Cursor is the coding worker**, not the general LLM runtime. Do not hardcode vendors in the core. Do not spawn a persistent agent per role.
 
+### RAD-6. Cursor Plugin as primary UX (ADR-012)
+
+The **primary user-facing interface** is a Cursor-native plugin (command + skill). The Go binary remains the **core engine**. The plugin is a thin adapter: it must not own DAG, state, repair, verification, Git semantics, knowledge, or model routing. The **CLI remains** as the engine interface for tests and scripts. The **P4 Cursor worker** remains a worker adapter; it is not the plugin. MCP, SDK, hooks, and subagents stay deferred unless a concrete need appears.
+
 ---
 
 ## 2. System overview
@@ -58,18 +65,26 @@ The orchestrator may use different models for planning, architecture, review, di
 PRD→PR is an **engineering loop engine**. It is not an agent framework.
 
 ```text
-Human
+User
   │  PRD, decisions, credentials, validation, feedback
   ▼
-prdpr (Go CLI)
+Cursor
+  ▼
+PRD→PR Plugin                         (primary UX; thin adapter)
+  ├── command  (/prdpr)
+  └── skill
+  ▼
+PRD→PR Go Engine                      (core; also reachable via CLI)
   │
   ├─ parse / plan / route / diagnose / learn     (orchestrator reasoning)
-  ├─ Cursor CLI                                  (coding worker)
+  ├─ Worker adapters                             (P4 Cursor worker ≠ plugin)
   ├─ local FS + Git                              (code + checkpoints)
   ├─ GitHub + Actions                            (PRs, CI, artifacts)
   ├─ tests / linters / builds                    (deterministic verification)
   └─ macOS Keychain + notifications              (secrets, human attention)
 ```
+
+The CLI (`prdpr …`) is the same engine without the plugin. Tests and automation use the CLI. The plugin must not duplicate orchestration.
 
 **What lives where**
 
@@ -88,9 +103,18 @@ The orchestrator never owns the product’s Git history. Git is the code checkpo
 
 ## 3. Component architecture
 
-V1 is one binary with internal packages. There are no microservices and no in-process “agent runtime.”
+V1 core is one Go binary with internal packages. There are no microservices and no in-process “agent runtime.”
 
-**Engine vs capabilities.** The orchestration **engine** coordinates a run: schedule the next node, invoke a capability, persist results, recover. Other modules **provide capabilities** (parse, plan, code, test, review, diagnose). They do not drive the loop.
+**Four layers (do not collapse):**
+
+| Layer | Role | Must not |
+|---|---|---|
+| **Core Engine** | Parse, graph, preflight, state, deterministic planning, workers, future verification/repair/learning | Depend on Cursor IDE, the plugin, MCP, or a database |
+| **CLI Interface** | `prdpr` commands over the engine; independent tests and scripts | Own domain orchestration (it dispatches; `engine` coordinates) |
+| **Cursor Plugin Interface** | Cursor-native entry; pass workspace/project context; present state/results; guide the workflow | Maintain orchestration state; implement the DAG, repair, retries, Git, verification, knowledge, or model routing |
+| **Worker Adapters** | Execute implementation tasks (P4: packet + Cursor CLI subprocess) | Orchestrate the run or act as the user-facing plugin |
+
+**Engine vs capabilities.** The orchestration **engine** coordinates a run: schedule the next node, invoke a capability, persist results, recover. Other modules **provide capabilities** (parse, plan, code, test, review, diagnose). They do not drive the loop. The plugin is not a capability module and not a worker.
 
 Exact Go package layout is an implementation choice. The conceptual split:
 
@@ -99,18 +123,21 @@ cmd/prdpr                 entrypoint
 internal/
   engine/                 coordinates execution (not a capability)
     run / scheduler / executor / recovery
-  cli/                    commands, live status, signals
+  cli/                    engine CLI interface (not the primary Cursor UX)
   config/                 user + project configuration
   fsguard/                workspace jail
   state/                  persistence, locking, project/phase machines
   graph/                  DAG, affected-set, replay plan
-  prd/                    PRD parse, IDs, traceability index
+  prd/                    PRD parse, IDs, traceability index, contract validation
+  studio/                 discover Studio root and category directories
+  bootstrap/              project type, placement, Cursor project rules
+  apprun/                 structured local application runtime
   preflight/              environment and dependency inspection
   plan/                   technical plan, design plan, convergence
   packet/                 task packet schema
   modelrouter/            task → model choice (no vendor in core)
   llm/                    LLM adapters (configured providers)
-  cursor/                 coding worker adapter
+  cursor/                 coding worker adapter (not the Cursor plugin)
   vcs/                    git + gh
   ci/                     Actions status, logs, artifacts
   testeng/                discover, run, parse, map to REQ/AC
@@ -128,14 +155,16 @@ internal/
 
 `engine` calls capabilities; capabilities never call `engine`. Scheduler in V1 is sequential (RAD-3).
 
-Adapters (Cursor, Git, GitHub, CI, Keychain, notifier, LLM client) sit behind small interfaces so tests do not require the network or Cursor.
+Adapters (Cursor worker, Git, GitHub, CI, Keychain, notifier, LLM client) sit behind small interfaces so tests do not require the network or Cursor IDE.
+
+The Cursor plugin (when implemented) lives **outside** the engine packages. It invokes the binary or a stable engine API. It is not `internal/cursor`.
 
 **Decision: single Go process with adapters**
 
-- **Needed:** PRD requires a personal Mac tool with Git, GitHub Actions, and Cursor CLI.
+- **Needed:** PRD requires a personal Mac tool with Git, GitHub Actions, and a Cursor coding worker.
 - **Simpler alternative:** a shell script wrapping Cursor. Rejected: no durable state machine, no independent review, no rewind/replay.
-- **Preferable:** one binary can persist state, jail the workspace, and treat Cursor as a worker rather than the system.
-- **Revisit if:** a second runtime (e.g. a required GUI) cannot share this process. Do not split into a daemon until `prdpr run` cannot stay in the foreground plus resume from disk.
+- **Preferable:** one binary can persist state, jail the workspace, and treat Cursor as a worker rather than the system. A Cursor plugin may wrap that binary for UX (ADR-012) without becoming a second engine.
+- **Revisit if:** a second runtime cannot share this process. Do not split into a daemon until `prdpr run` cannot stay in the foreground plus resume from disk. Do not make the plugin the orchestrator.
 
 **Decision: no database in V1**
 
@@ -155,15 +184,18 @@ Adapters (Cursor, Git, GitHub, CI, Keychain, notifier, LLM client) sit behind sm
 | Module | Owns | Does not own |
 |---|---|---|
 | `engine` | Run loop, sequential schedule, step execution, recovery orchestration | Domain logic of parse/plan/code/test |
-| `cli` | UX, flags, live status, interrupt → pause | Business rules |
-| `state` | `state.json`, locks, valid transitions | How a phase is implemented |
+| `cli` | Engine CLI UX, flags, live status, interrupt → pause | Business rules; Cursor plugin |
+| `state` | `state.json`, locks, valid transitions | How a phase is implemented; plugin UI |
 | `graph` | Nodes, edges, parallel candidates, affected-set | Whether a node *should* exist; when to run it |
-| `prd` | Structured PRD model + traceability | Execution |
+| `prd` | Structured PRD model + traceability + contract validation | Execution; inventing missing product decisions |
+| `studio` | Discover Studio root/categories from env and layout | Guessing a personal home path |
+| `bootstrap` | Project type, destination, PRD placement, Cursor Rules files | GitHub rulesets; orchestration |
+| `apprun` | Structured local start/ready from project type | Arbitrary PRD shell execution |
 | `preflight` | Readiness report, dependency classification | Installing arbitrary system software without policy |
 | `plan` | Phase graph population, design vs tech plans | Editing product code |
 | `modelrouter` | Task/role → model choice + recorded outcomes | Provider SDKs; Cursor invocation |
 | `llm` | Provider adapters behind one interface | Routing policy |
-| `cursor` | Invoke coding worker, timeout, capture | Trusting “done”; general reasoning tasks |
+| `cursor` | Invoke coding worker, timeout, capture | Trusting “done”; general reasoning tasks; Cursor plugin UX |
 | `vcs` | Branch, commit, push, PR at milestone | CI interpretation |
 | `ci` | Watch checks, fetch logs/artifacts | Repair strategy |
 | `testeng` | Independent test execution and mapping | Writing all tests (worker may add tests; engine verifies) |
@@ -485,7 +517,7 @@ The DAG may mark independent nodes. V1 still runs them **sequentially**. The sub
 
 ## 14. Cursor execution
 
-Cursor is a **worker**, not the orchestrator.
+Cursor is a **coding worker**, not the orchestrator and not the user-facing plugin.
 
 The orchestrator:
 
@@ -496,12 +528,18 @@ The orchestrator:
 
 Workspace policy: default highly autonomous *inside* the configured root (PRD §28). The adapter passes the packet and permission profile; the orchestrator still enforces the jail via `fsguard` on any orchestrator-side file operations.
 
-**Decision: packet-on-disk + subprocess, not an IDE plugin**
+**Decision: worker remains packet-on-disk + subprocess (P4 unchanged)**
 
-- **Needed:** initial environment is Cursor CLI.
+- **Needed:** autonomous implementation in a checkpointed workspace.
 - **Simpler alternative:** tell the user to paste the packet into Cursor. Rejected: not autonomous.
-- **Preferable:** one integration surface. CLI flags/commands will change; isolate them in `internal/cursor`.
+- **Preferable:** one worker integration surface. CLI flags/commands will change; isolate them in `internal/cursor`.
 - **Revisit if:** Cursor CLI cannot apply patches non-interactively. Then the worker interface stays; the adapter changes. See [OAQ-8](#oaq-8-cursor-cli-contract).
+
+**Decision: Cursor Plugin is the primary UX, not the worker (ADR-012)**
+
+- **Needed:** users work in Cursor; the engine should not be the only human entry point.
+- **Not this layer:** MCP, SDK agents, hooks, subagents, extra commands (Plugin V0 is manifest + `/prdpr` + one skill + docs).
+- **Must not:** duplicate orchestration, collapse plugin and worker, or make Cursor IDE a hard dependency of the core engine.
 
 The running `prdpr` binary is never a write target for a worker. Self-dogfooding uses a Git branch and a rebuild step, not in-place overwrite of the executing file.
 
@@ -769,12 +807,13 @@ Preflight records OS, arch, tools, creds **presence** (not values), Git dirtines
 
 ## 28. CLI architecture
 
-Single binary `prdpr`. Subcommands from PRD §46:
+Single binary `prdpr`. This is the **engine interface**, not the primary Cursor UX (ADR-012). Subcommands from PRD §46:
 
 | Command | Role |
 |---|---|
 | `init` | Create `.project/`, initial state |
 | `inspect PRD.md` | Parse + report; no execution |
+| `validate-prd PRD.md` | Mandatory PRD contract gate (pre-orchestration; no workspace mutation) |
 | `run PRD.md` | Full loop |
 | `status` | Snapshot + live if lock held |
 | `pause` | Cooperative pause at next safe point; persist |
@@ -787,7 +826,7 @@ Single binary `prdpr`. Subcommands from PRD §46:
 | `knowledge` / `learn` | Inspect or run learning review |
 | `doctor` | Preflight-like health of the **orchestrator** environment |
 
-Primary UX: `prdpr run PRD.md` with a compact live status (PRD §47).
+Primary **engine** workflow: `prdpr run PRD.md` with a compact live status (PRD §47). Primary **human** workflow: Cursor plugin `/prdpr` + skill, which should invoke the same engine path.
 
 Signals: SIGINT → cooperative pause attempt, then exit; state must remain resumable.
 
@@ -803,14 +842,18 @@ Config search order: flags > env `PRDPR_*` > `<product>/.project/config.yaml` > 
 
 ## 29. Extensibility
 
-Extension points are **Go interfaces + config**, not plugins or MCP:
+Engine extension points are **Go interfaces + config**, not a Go plugin bus or MCP:
 
-- `Worker` (Cursor first)
+- `Worker` (Cursor first) — implementation adapter, not the Cursor plugin
 - `LLMClient` / adapter (configured providers; no vendor in core)
 - `VCS` / `CI`
 - `Notifier`
 - `SecretStore`
 - `TestRunner` (discovered per ecosystem)
+
+The **Cursor plugin** is a UX adapter over the engine (ADR-012), not an engine extension point and not MCP.
+
+**Documented, not V1-required:** extra plugin commands, hooks, Cursor Agent SDK adapter, optional subagents, MCP if a concrete need emerges.
 
 New product languages should look like new test/preflight detectors, not a new orchestrator.
 
@@ -834,7 +877,7 @@ No requirement for Kubernetes or remote device labs in V1. iOS benchmarks need l
 
 - Structured logs (JSON lines) to stderr and `.project/execution/` (redacted).
 - `events.jsonl` for state transitions and side effects.
-- `prdpr status` / `prdpr logs` as the user-facing view.
+- `prdpr status` / `prdpr logs` as the CLI view of the same state. The Cursor plugin presents orchestration state/results; it does not own a second store.
 - No hosted APM in V1.
 
 Metrics that matter: phase duration, cost, repair count, human minutes, gate failures. These are ledger fields, not Prometheus.
@@ -873,6 +916,7 @@ Metrics that matter: phase duration, cost, repair count, human minutes, gate fai
 
 ```text
 PRD.md
+  → contract validation (BLOCKING rejects; no product mutation)
   → PRDDocument + trace.json
   → preflight report
   → graph.json + phase plans + DESIGN/ADR artifacts
@@ -924,7 +968,9 @@ Breaking these contracts requires an ADR.
 |---|---|---|
 | Single binary vs daemon | Resume is explicit | Simple ops, no background service |
 | Files vs DB | Weaker ad-hoc query | Git-friendly, zero ops |
-| Direct APIs vs MCP | One-off adapters | Matches V1 non-goals |
+| Direct APIs vs MCP | One-off adapters | Matches V1 non-goals (ADR-009) |
+| Cursor plugin as UX vs CLI-only | Plugin+CLI must stay thin over one engine | Matches how users work in Cursor (ADR-012) |
+| Plugin vs worker | Two Cursor surfaces | UX adapter ≠ implementation adapter (ADR-004, ADR-012) |
 | Cursor as only coder vs multi-worker | Cursor outage blocks coding | Independent review + cost routing remain possible |
 | Sequential DAG vs parallel Cursor | Slower wall clock | Safe worktree, cheaper V1 (ADR-007) |
 | One PR per run vs per phase | Larger milestone diffs | Less GitHub noise; engine stays PR-agnostic (ADR-011) |
@@ -1011,16 +1057,16 @@ Working default: project observations in `.project/knowledge/`; promoted global 
 
 ## Architecture summary
 
-PRD→PR V1 is a **local Go CLI**: an **engine** coordinates a **persisted DAG**; **capability modules** parse, plan, code (Cursor), test, review, and diagnose. Git, tests, CI, and schemas are the truth. Reasoning goes through a **vendor-neutral Model Router + LLM adapters**; coding goes through **Cursor**. V1 **schedules sequentially**, commits **per phase**, opens **one PR per run/milestone**, and never auto-merges. Repair is **3 attempts per incident**, using prior evidence; **infrastructure failures do not count**. State is **`.project/` JSON + JSONL**. No MCP, database, swarm, or cloud orchestrator.
+PRD→PR V1 is a **local Go core engine** with a **thin Cursor plugin** as primary UX (ADR-012) and a **CLI** as the independent engine interface. An **engine** coordinates a **persisted DAG**; **capability modules** parse, plan, code (Cursor **worker**), test, review, and diagnose. Git, tests, CI, and schemas are the truth. Reasoning goes through a **vendor-neutral Model Router + LLM adapters**; coding goes through the **Cursor worker adapter**, not the plugin. V1 **schedules sequentially**, commits **per phase**, opens **one PR per run/milestone**, and never auto-merges. Repair is **3 attempts per incident**, using prior evidence; **infrastructure failures do not count**. State is **`.project/` JSON + JSONL**. No MCP, database, swarm, or cloud orchestrator. Cursor IDE is not a hard dependency of the engine.
 
 Accepted ADRs:
 
 | File | Decision |
 |---|---|
-| [ADR-001](ADR/ADR-001-single-local-go-binary.md) | Single local Go binary |
+| [ADR-001](ADR/ADR-001-single-local-go-binary.md) | Single local Go binary (core engine) |
 | [ADR-002](ADR/ADR-002-filesystem-state-and-git-checkpoints.md) | Filesystem state + Git checkpoints |
 | [ADR-003](ADR/ADR-003-dag-execution-and-recovery.md) | DAG execution and recovery |
-| [ADR-004](ADR/ADR-004-cursor-as-coding-worker.md) | Cursor as coding worker |
+| [ADR-004](ADR/ADR-004-cursor-as-coding-worker.md) | Cursor as coding worker (not the plugin) |
 | [ADR-005](ADR/ADR-005-independent-verification.md) | Independent verification |
 | [ADR-006](ADR/ADR-006-three-attempt-repair-limit.md) | Per-incident 3-attempt repair; infra excluded |
 | [ADR-007](ADR/ADR-007-sequential-v1-execution.md) | Sequential V1 scheduler |
@@ -1028,3 +1074,4 @@ Accepted ADRs:
 | [ADR-009](ADR/ADR-009-no-mcp-or-database-v1.md) | No MCP or database in V1 |
 | [ADR-010](ADR/ADR-010-workspace-security-boundary.md) | Workspace security boundary |
 | [ADR-011](ADR/ADR-011-pr-per-meaningful-milestone.md) | PR per run/milestone; no auto-merge |
+| [ADR-012](ADR/ADR-012-cursor-plugin-primary-ux.md) | Cursor plugin primary UX; thin adapter; CLI remains |

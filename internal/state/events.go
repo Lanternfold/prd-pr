@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+
+	"github.com/lanternfold/prd-pr/internal/redact"
 )
 
 func (s *Store) appendEventLocked(ev Event) error {
@@ -16,6 +18,9 @@ func (s *Store) appendEventLocked(ev Event) error {
 	}
 	if ev.Timestamp == "" {
 		ev.Timestamp = s.timestamp()
+	}
+	if ev.Payload != nil {
+		ev.Payload = json.RawMessage(redact.String(string(ev.Payload)))
 	}
 	line, err := json.Marshal(ev)
 	if err != nil {
@@ -54,5 +59,5 @@ func payloadJSON(v any) json.RawMessage {
 	if err != nil {
 		return nil
 	}
-	return b
+	return json.RawMessage(redact.String(string(b)))
 }

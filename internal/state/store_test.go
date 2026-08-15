@@ -259,6 +259,25 @@ func TestInitDoesNotWriteOutsideRoot(t *testing.T) {
 	}
 }
 
+func TestEventsRedactSecrets(t *testing.T) {
+	dir := t.TempDir()
+	s := mustOpen(t, dir, Options{})
+	if _, err := s.Init(); err != nil {
+		t.Fatal(err)
+	}
+	secret := "sk-abcdefghijklmnopqrstuvwxyz123456"
+	if err := s.AppendEvent(Event{Kind: KindResult, Name: EventPushFailed, Payload: Payload(map[string]string{"error": "token=" + secret})}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, DirName, EventsFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), secret) {
+		t.Fatalf("secret leaked in events: %s", raw)
+	}
+}
+
 func TestLoadNotInitialized(t *testing.T) {
 	s := mustOpen(t, t.TempDir(), Options{})
 	if _, err := s.Load(); !errors.Is(err, ErrNotInitialized) {

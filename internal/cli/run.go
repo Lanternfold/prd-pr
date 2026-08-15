@@ -11,6 +11,7 @@ import (
 	"github.com/lanternfold/prd-pr/internal/cursor"
 	"github.com/lanternfold/prd-pr/internal/engine"
 	"github.com/lanternfold/prd-pr/internal/prd"
+	"github.com/lanternfold/prd-pr/internal/preflight"
 )
 
 func runRun(args []string, stdout, stderr io.Writer, rt Runtime) int {
@@ -40,6 +41,7 @@ func runRun(args []string, stdout, stderr io.Writer, rt Runtime) int {
 		ProductRoot: opts.root,
 		PRDPath:     opts.prd,
 		PhaseID:     opts.phase,
+		Mode:        preflight.ModeHeadless,
 	})
 	if err != nil {
 		printStateErr(stderr, err)
@@ -97,7 +99,7 @@ func parseRunArgs(args []string) (runOpts, error) {
 		a := args[i]
 		switch {
 		case a == "-h" || a == "--help":
-			return runOpts{}, fmt.Errorf("usage: prdpr run [--prd FILE] [--phase ID] [--worker cursor|fake] [--timeout DURATION] [directory]")
+			return runOpts{}, fmt.Errorf("usage: prdpr run [--prd FILE] [--phase ID] [--worker cursor|fake] [--timeout DURATION] [directory]\n%s", docsHint("run"))
 		case a == "--prd":
 			if i+1 >= len(args) {
 				return runOpts{}, fmt.Errorf("usage: prdpr run [--prd FILE] [--phase ID] [--worker cursor|fake] [--timeout DURATION] [directory]")

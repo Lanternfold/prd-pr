@@ -218,3 +218,18 @@ func (f Fake) Run(ctx context.Context, req Request) Result {
 	res.Duration = time.Since(start)
 	return res
 }
+
+// Sequence runs Fake steps in order. Tests use it for implement-then-repair.
+type Sequence struct {
+	Steps []Fake
+	i     int
+}
+
+func (s *Sequence) Run(ctx context.Context, req Request) Result {
+	if s == nil || s.i >= len(s.Steps) {
+		return Result{Invoked: false, RefusalReason: "no remaining fake worker steps", VerifiedSuccess: false}
+	}
+	step := s.Steps[s.i]
+	s.i++
+	return step.Run(ctx, req)
+}

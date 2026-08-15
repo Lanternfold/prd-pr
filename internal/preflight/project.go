@@ -2,6 +2,7 @@ package preflight
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -13,9 +14,48 @@ import (
 	"github.com/lanternfold/prd-pr/internal/vcs"
 )
 
+const (
+	ModeInteractive = "interactive"
+	ModeHeadless    = "headless"
+	WorkerCursor    = "cursor"
+	WorkerFake      = "fake"
+	WorkerSession   = "session"
+)
+
 type Request struct {
 	ProductRoot string
 	PRDPath     string
+	Mode        string
+	Worker      string
+}
+
+func NormalizeMode(mode string) (string, error) {
+	switch strings.TrimSpace(strings.ToLower(mode)) {
+	case "", ModeInteractive:
+		return ModeInteractive, nil
+	case ModeHeadless:
+		return ModeHeadless, nil
+	default:
+		return "", fmt.Errorf("unknown execution mode %q (want interactive or headless)", mode)
+	}
+}
+
+func NormalizeWorker(worker, mode string) (string, error) {
+	switch strings.TrimSpace(strings.ToLower(worker)) {
+	case "":
+		if mode == ModeInteractive {
+			return WorkerSession, nil
+		}
+		return WorkerCursor, nil
+	case WorkerCursor, WorkerFake, WorkerSession:
+		return strings.ToLower(worker), nil
+	default:
+		return "", fmt.Errorf("unknown worker %q (want cursor, fake, or session)", worker)
+	}
+}
+
+func RequireCursorAgent(mode, worker string) bool {
+	return mode == ModeHeadless && worker != WorkerFake && worker != WorkerSession
 }
 
 func addProjectChecks(ctx context.Context, env Env, r *Report, req Request, machine Machine) {

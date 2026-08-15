@@ -12,7 +12,8 @@ import (
 func runPreflight(args []string, stdout, stderr io.Writer, rt Runtime) int {
 	for _, a := range args {
 		if a == "-h" || a == "--help" {
-			fmt.Fprintln(stdout, "Usage: prdpr preflight [--json] [--prd FILE] [directory]")
+			fmt.Fprintln(stdout, "Usage: prdpr preflight [--json] [--prd FILE] [--mode interactive|headless] [--worker cursor|fake] [directory]")
+			fmt.Fprintln(stdout, docsHint("preflight"))
 			return exitOK
 		}
 	}
@@ -28,6 +29,8 @@ func runPreflight(args []string, stdout, stderr io.Writer, rt Runtime) int {
 	rep := preflight.New(env).Run(nil, preflight.Request{
 		ProductRoot: opts.root,
 		PRDPath:     opts.prd,
+		Mode:        opts.mode,
+		Worker:      opts.worker,
 	})
 	if opts.json {
 		if err := preflight.FormatJSON(stdout, rep); err != nil {
@@ -45,15 +48,17 @@ func runPreflight(args []string, stdout, stderr io.Writer, rt Runtime) int {
 }
 
 type preflightOpts struct {
-	root string
-	prd  string
-	json bool
+	root   string
+	prd    string
+	json   bool
+	mode   string
+	worker string
 }
 
 func parsePreflightArgs(args []string) (preflightOpts, error) {
 	var opts preflightOpts
 	var positional []string
-	usage := "usage: prdpr preflight [--json] [--prd FILE] [directory]"
+	usage := "usage: prdpr preflight [--json] [--prd FILE] [--mode interactive|headless] [--worker cursor|fake] [directory]"
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
@@ -69,6 +74,22 @@ func parsePreflightArgs(args []string) (preflightOpts, error) {
 			opts.prd = args[i]
 		case strings.HasPrefix(a, "--prd="):
 			opts.prd = strings.TrimPrefix(a, "--prd=")
+		case a == "--mode":
+			if i+1 >= len(args) {
+				return preflightOpts{}, fmt.Errorf("%s", usage)
+			}
+			i++
+			opts.mode = args[i]
+		case strings.HasPrefix(a, "--mode="):
+			opts.mode = strings.TrimPrefix(a, "--mode=")
+		case a == "--worker":
+			if i+1 >= len(args) {
+				return preflightOpts{}, fmt.Errorf("%s", usage)
+			}
+			i++
+			opts.worker = args[i]
+		case strings.HasPrefix(a, "--worker="):
+			opts.worker = strings.TrimPrefix(a, "--worker=")
 		case strings.HasPrefix(a, "-"):
 			return preflightOpts{}, fmt.Errorf("unknown flag %q\n%s", a, usage)
 		default:
@@ -80,6 +101,9 @@ func parsePreflightArgs(args []string) (preflightOpts, error) {
 		return preflightOpts{}, err
 	}
 	opts.root = root
+	if opts.mode == "" {
+		opts.mode = preflight.ModeInteractive
+	}
 	return opts, nil
 }
 

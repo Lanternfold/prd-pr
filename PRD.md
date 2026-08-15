@@ -176,9 +176,13 @@ Go
 Git
 GitHub
 GitHub Actions
-Cursor CLI
+Cursor (IDE + CLI)
 local filesystem
 configured LLM APIs where required
+
+The **core engine** is a local Go binary. It must remain usable without Cursor IDE (CLI/tests/fakes). The **primary user-facing interface** is a Cursor-native plugin that invokes that engine (see §46). Cursor CLI remains the coding **worker** transport. The plugin is not the worker.
+
+Day-to-day invocation is PRD-path only: `prdpr <PRD.md>` or `/prdpr`. The engine discovers Studio placement from `PRDPR_STUDIO` or a directory that contains `Tools/` and `Products/`. It must not hardcode a personal product path.
 
 PRD→PR itself will live at:
 
@@ -423,7 +427,27 @@ This directory belongs to the product repository.
 
 The orchestrator consumes a PRD.md.
 
-The PRD should support:
+**Mandatory pre-orchestration gate (not a new phase ID):** `prdpr validate-prd` must reject a PRD that is not sufficiently complete and unambiguous for autonomous implementation. The gate runs from the PRD path only. It must not create a Studio project, product directory, Git repository, GitHub resource, or Cursor invocation. REJECTED means stop until a human updates the PRD. VALID may proceed to bootstrap → prepare → implementation.
+
+Authoring expectations for product PRDs are in `docs/PRD_AUTHORING_CONTRACT.md`. The PRD should support:
+
+product definition
+goals
+non-goals
+users
+user journeys
+requirements
+acceptance criteria
+design
+technical stack
+architecture
+dependencies
+credentials
+testing
+security
+phases
+human validation
+Definition of Done
 
 product definition
 goals
@@ -799,6 +823,8 @@ Record the outcome for future learning.
 27. Implementation Worker
 
 Cursor is the initial coding worker.
+
+The Cursor plugin (primary UX) is not the coding worker. The orchestrator invokes the worker with a task packet.
 
 The orchestrator creates a task packet containing:
 
@@ -1216,12 +1242,15 @@ duration
 human interventions
 lessons
 known limitations
-46. CLI
+46. CLI and Cursor Plugin
 
-Initial commands:
+The Go CLI (`prdpr`) is the core engine interface. It must remain independently executable and testable.
+
+Initial engine commands:
 
 prdpr init
 prdpr inspect PRD.md
+prdpr validate-prd PRD.md
 prdpr run PRD.md
 prdpr status
 prdpr pause
@@ -1235,12 +1264,22 @@ prdpr knowledge
 prdpr learn
 prdpr doctor
 
-The primary workflow should eventually be:
+The CLI workflow remains:
 
 prdpr run PRD.md
+
+The **primary user-facing workflow** is a Cursor-native plugin that invokes the same engine:
+
+User → Cursor → PRD→PR Plugin (command + skill) → PRD→PR Go engine
+
+Plugin V0 is limited to: plugin manifest, one `/prdpr` command, one PRD→PR skill, and minimal documentation.
+
+The plugin must not implement orchestration (state, DAG, repair, retries, Git semantics, verification, knowledge, or model routing). Those belong to the Go engine.
+
+Do not require MCP, subagents, hooks, custom agents, SDK, cloud services, or extra commands for Plugin V0.
 47. Status Output
 
-The CLI should provide a concise live status.
+The CLI should provide a concise live status. The plugin should present the same orchestration state; it must not keep a second source of truth.
 
 Example:
 
@@ -1326,8 +1365,9 @@ V1 should run primarily on the user's Mac.
 Initial architecture:
 
 Mac
-├── PRD→PR
 ├── Cursor
+│     └── PRD→PR Plugin (primary UX; thin adapter)
+├── PRD→PR Go engine (CLI; independently executable)
 ├── Git
 └── local project
        │
@@ -1337,7 +1377,7 @@ Mac
        ▼
 GitHub Actions
 
-No cloud orchestrator is required for V1.
+The plugin invokes the engine. Cursor as coding worker is a separate adapter. No cloud orchestrator is required for V1. The engine must not require Cursor IDE.
 
 52. Initial Development Phases
 

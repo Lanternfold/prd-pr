@@ -31,7 +31,7 @@ type Baseline struct {
 // GitFunc runs git in dir and returns combined stdout (trimmed) or an error.
 type GitFunc func(ctx context.Context, dir string, args ...string) (string, error)
 
-// Client is the P4-minimum local Git adapter. It does not push, open PRs, or manage remotes.
+// Client is the local Git adapter: inspect, baseline, commit, branch, remote, push.
 type Client struct {
 	Git      GitFunc
 	LookPath func(file string) (string, error)
@@ -61,10 +61,49 @@ func Default() *Client {
 }
 
 func (c *Client) git() GitFunc {
+	inner := Default().Git
 	if c != nil && c.Git != nil {
-		return c.Git
+		inner = c.Git
 	}
-	return Default().Git
+	return func(ctx context.Context, dir string, args ...string) (string, error) {
+		if err := refuseDestructiveGit(args); err != nil {
+			return "", err
+		}
+		return inner(ctx, dir, args...)
+	}
+}
+
+func refuseDestructiveGit(args []string) error {
+	if len(args) == 0 {
+		return nil
+	}
+	switch args[0] {
+	case "push":
+		for _, a := range args[1:] {
+			if a == "--force" || a == "-f" || a == "--force-with-lease" || strings.HasPrefix(a, "--force=") {
+				return fmt.Errorf("refusing force push")
+			}
+		}
+	case "reset":
+		return fmt.Errorf("refusing git reset")
+	case "rebase":
+		return fmt.Errorf("refusing git rebase")
+	case "commit":
+		for _, a := range args[1:] {
+			if a == "--amend" {
+				return fmt.Errorf("refusing git commit --amend")
+			}
+		}
+	case "remote":
+		for _, a := range args[1:] {
+			if a == "set-url" {
+				return fmt.Errorf("refusing to overwrite an existing remote")
+			}
+		}
+	case "filter-branch":
+		return fmt.Errorf("refusing git history rewrite")
+	}
+	return nil
 }
 
 func (c *Client) lookPath() func(string) (string, error) {
@@ -171,6 +210,57 @@ func (c *Client) ChangedSince(ctx context.Context, root, sha string, jail *fsgua
 		}
 	}
 	return out, nil
+}
+
+// ChangeSet is a read-only classification of workspace changes vs a baseline SHA.
+type ChangeSet struct {
+	All       []string `json:"all,omitempty"`
+	Untracked []string `json:"untracked,omitempty"`
+	Deleted   []string `json:"deleted,omitempty"`
+	HeadSHA   string   `json:"head_sha,omitempty"`
+	Branch    string   `json:"branch,omitempty"`
+}
+
+// ChangesFrom lists product changes since baseline without mutating Git.
+func (c *Client) ChangesFrom(ctx context.Context, root, sha string, jail *fsguard.Jail) (ChangeSet, error) {
+	sn, err := c.Inspect(ctx, root)
+	if err != nil {
+		return ChangeSet{}, err
+	}
+	all, err := c.ChangedSince(ctx, root, sha, jail)
+	if err != nil {
+		return ChangeSet{}, err
+	}
+	untrackedRaw, err := c.git()(ctx, root, "ls-files", "--others", "--exclude-standard")
+	if err != nil {
+		return ChangeSet{}, err
+	}
+	deletedRaw, err := c.git()(ctx, root, "diff", "--name-only", "--diff-filter=D", sha)
+	if err != nil {
+		return ChangeSet{}, err
+	}
+	filter := func(block string) []string {
+		var out []string
+		for _, line := range splitLines(block) {
+			rel := strings.TrimSpace(line)
+			if rel == "" || isProjectMeta(rel) {
+				continue
+			}
+			abs := canonicalPath(filepath.Join(root, rel))
+			if jail != nil && !jail.Contains(abs) {
+				continue
+			}
+			out = append(out, rel)
+		}
+		return out
+	}
+	return ChangeSet{
+		All:       all,
+		Untracked: filter(untrackedRaw),
+		Deleted:   filter(deletedRaw),
+		HeadSHA:   sn.HeadSHA,
+		Branch:    sn.Branch,
+	}, nil
 }
 
 func productDirtyPaths(porcelain string) []string {

@@ -40,7 +40,29 @@ func (j *Jail) Root() string {
 	return j.root
 }
 
+// Canonical returns the filesystem-canonical form of p (Abs + EvalSymlinks).
+// If p itself cannot be evaluated, the parent directory is evaluated when possible.
+func Canonical(p string) (string, error) {
+	if strings.TrimSpace(p) == "" {
+		return "", fmt.Errorf("path is empty")
+	}
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return "", err
+	}
+	abs = filepath.Clean(abs)
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		return resolved, nil
+	}
+	dir, base := filepath.Dir(abs), filepath.Base(abs)
+	if resolvedDir, err := filepath.EvalSymlinks(dir); err == nil {
+		return filepath.Join(resolvedDir, base), nil
+	}
+	return abs, nil
+}
+
 // Resolve maps a relative (or in-root absolute) path to an absolute path inside the jail.
+// Containment is checked only after canonicalization. Symlinks that escape the root are rejected.
 func (j *Jail) Resolve(p string) (string, error) {
 	if j == nil || j.root == "" {
 		return "", fmt.Errorf("filesystem jail is not configured")
@@ -48,11 +70,13 @@ func (j *Jail) Resolve(p string) (string, error) {
 	if strings.TrimSpace(p) == "" {
 		return "", fmt.Errorf("path is empty")
 	}
-	var candidate string
-	if filepath.IsAbs(p) {
-		candidate = filepath.Clean(p)
-	} else {
-		candidate = filepath.Clean(filepath.Join(j.root, p))
+	raw := p
+	if !filepath.IsAbs(p) {
+		raw = filepath.Join(j.root, p)
+	}
+	candidate, err := Canonical(raw)
+	if err != nil {
+		return "", err
 	}
 	if !j.Contains(candidate) {
 		return "", fmt.Errorf("path %q is outside product root %q", p, j.root)
@@ -65,10 +89,13 @@ func (j *Jail) Contains(abs string) bool {
 	if j == nil {
 		return false
 	}
-	abs = filepath.Clean(abs)
-	if abs == j.root {
+	cand, err := Canonical(abs)
+	if err != nil {
+		cand = filepath.Clean(abs)
+	}
+	if cand == j.root {
 		return true
 	}
 	sep := string(filepath.Separator)
-	return strings.HasPrefix(abs, j.root+sep)
+	return strings.HasPrefix(cand, j.root+sep)
 }
