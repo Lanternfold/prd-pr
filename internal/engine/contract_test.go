@@ -103,6 +103,7 @@ func TestRejectedPRDDoesNotMutateWorld(t *testing.T) {
 }
 
 func TestValidPRDMayEnterBootstrap(t *testing.T) {
+	gitAuthor(t)
 	root := t.TempDir()
 	copyContractPRD(t, root, "pass_complete.md")
 	eng := engine.New(engine.Options{Worker: panicWorker{}, AllowSelf: true, NewID: seqID()})
